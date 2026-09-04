@@ -257,7 +257,7 @@
       try {
         btn.disabled = true;
         btn.textContent = AgroI18n.get('common.loading', 'Publishing...');
-        await apiCreateService({
+        const res = await apiCreateService({
           name,
           category: cat,
           price,
@@ -267,10 +267,11 @@
           image,
           available: true
         });
-        showToast('Service published successfully! 🎉', 'success');
+        const createdId = res?.id || res?.service?.id || '';
+        showToast(createdId ? `Service published successfully! Product ID: #${createdId} 🎉` : 'Service published successfully! 🎉', 'success', 3500);
         setTimeout(() => {
           window.location.href = 'provider-services.html';
-        }, 700);
+        }, 900);
       } catch (e) {
         btn.disabled = false;
         btn.innerHTML = `<span data-i18n="add_service.publish_btn">${AgroI18n.get('add_service.publish_btn', '🚀 Publish Service')}</span>`;

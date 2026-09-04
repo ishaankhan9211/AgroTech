@@ -10,6 +10,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setGreeting();
   loadUserName();
   loadFarmerLocation();
+  fetchLiveGoogleLocation();
 
   await Promise.all([
     loadFarmerStats(),
@@ -122,17 +123,29 @@ async function loadActiveJobs() {
 
 async function loadRecentAlerts() {
   const alertsContainer = document.getElementById('recentAlertsList');
-  if (!alertsContainer) return;
+  const marqueeEl = document.getElementById('adminBroadcastMarquee');
 
   try {
     const data = await apiGetAlerts();
     const alerts = data.alerts || [];
+
+    // Populate marquee with admin announcements
+    const broadcasts = alerts.filter(a => a.audience === 'all' || a.audience === 'farmer' || a.type === 'system' || a.type === 'broadcast');
+    if (marqueeEl) {
+      if (broadcasts.length > 0) {
+        marqueeEl.innerHTML = broadcasts.map(b => `📢 <b>${b.title}</b>: ${b.message}`).join(' &nbsp;&nbsp;&nbsp;&nbsp;⚡&nbsp;&nbsp;&nbsp;&nbsp; ');
+      } else {
+        marqueeEl.innerHTML = `🌾 Welcome to AgroTECH: Verified tractor & harvester rentals available across MP & Rajasthan • Ensure you confirm 'Work Done' after service completion to reactivate equipment!`;
+      }
+    }
+
+    if (!alertsContainer) return;
     if (alerts.length === 0) {
       alertsContainer.innerHTML = `<div style="color:var(--gray-500);font-size:0.875rem">${AgroI18n.get('farmer.no_alerts', 'No new alerts at the moment.')}</div>`;
       return;
     }
 
-    const recent = alerts.slice(0, 3);
+    const recent = alerts.slice(0, 4);
     alertsContainer.innerHTML = recent.map(a => `
       <div class="alert-chip-item">
         <div style="display:flex;align-items:center;gap:8px">
@@ -146,36 +159,37 @@ async function loadRecentAlerts() {
       </div>
     `).join('');
   } catch (err) {
-    alertsContainer.innerHTML = `<div style="color:var(--gray-500);font-size:0.875rem">No recent alerts.</div>`;
+    if (alertsContainer) alertsContainer.innerHTML = `<div style="color:var(--gray-500);font-size:0.875rem">No recent alerts.</div>`;
   }
 }
 
 async function loadFarmerServices() {
   const grid = document.getElementById('productGrid');
   if (!grid) return;
-  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--gray-500)">Loading nearest available services...</div>';
+  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--gray-500)">Loading recently added products...</div>';
 
   try {
     const res = await apiGetServices();
     currentServices = res.services || [];
     renderServiceCards(getSortedServices());
   } catch (err) {
-    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--gray-500)">Failed to load services.</div>';
+    grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:2rem;color:var(--gray-500)">Failed to load products.</div>';
   }
 }
 
+// Show ONLY recently added products (Newest first, top 6)
 function getSortedServices() {
   if (!currentServices || currentServices.length === 0) return [];
   const list = [...currentServices];
   
-  if (isNearestSortActive && typeof AgroLocation !== 'undefined') {
-    list.sort((a, b) => {
-      const distA = AgroLocation.getDistanceForService(a);
-      const distB = AgroLocation.getDistanceForService(b);
-      return distA - distB;
-    });
-  }
-  return list.slice(0, 8);
+  // Sort descending by created_at or id
+  list.sort((a, b) => {
+    const timeA = a.created_at ? new Date(a.created_at).getTime() : (Number(a.id) || 0);
+    const timeB = b.created_at ? new Date(b.created_at).getTime() : (Number(b.id) || 0);
+    return timeB - timeA;
+  });
+
+  return list.slice(0, 6);
 }
 
 function toggleNearestSort() {
@@ -204,8 +218,9 @@ function renderServiceCards(list) {
     grid.innerHTML = `
       <div class="empty-state" style="grid-column:1/-1">
         <div class="empty-icon">🚜</div>
-        <h3>No services available</h3>
-        <p>Check back later or browse all categories.</p>
+        <h3>No recent products found</h3>
+        <p>Explore the full catalog to browse all categories.</p>
+        <a href="search.html" class="btn btn-primary" style="margin-top:10px">Browse Full Catalog →</a>
       </div>`;
     return;
   }
@@ -215,7 +230,12 @@ function renderServiceCards(list) {
     const distBadge = distKm !== null ? AgroLocation.renderDistanceBadge(distKm) : '';
 
     return `
-      <div class="product-card animate-fade-up" style="animation-delay:${i * 0.05}s">
+      <div class="product-card animate-fade-up" style="animation-delay:${i * 0.05}s;position:relative">
+        <div style="position:absolute;top:10px;left:10px;z-index:2">
+          <span style="background:linear-gradient(135deg,#15803d,#16a34a);color:white;font-size:0.72rem;font-weight:800;padding:3px 9px;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,0.2)">
+            ✨ RECENT
+          </span>
+        </div>
         <img class="product-card-img" src="${s.image}" alt="${s.name}"
              onerror="this.src='https://via.placeholder.com/300x180/e8f5e9/2e7d32?text=${encodeURIComponent(s.name)}'"
              onclick="openRequestModalById(${s.id})" style="cursor:pointer">
@@ -226,7 +246,7 @@ function renderServiceCards(list) {
           
           <div class="product-card-meta">
             <div class="product-card-price">${formatPrice(s.price)} <span>/ ${s.unit}</span></div>
-            <div class="product-card-rating">★ ${s.rating || 4.5} <span style="color:#94a3b8">(${s.reviews || 10})</span></div>
+            <div class="product-card-rating">★ ${s.rating || 4.8} <span style="color:#94a3b8">(${s.reviews || 10})</span></div>
           </div>
 
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:4px">

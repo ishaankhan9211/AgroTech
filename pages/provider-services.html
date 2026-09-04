@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="../css/home.css">
   <style>
     .services-layout {
-      max-width: 1000px;
+      max-width: 1080px;
       margin: 2rem auto;
       padding: 0 1.5rem 3rem;
     }
@@ -17,104 +17,171 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 1.75rem;
+      margin-bottom: 1.25rem;
       flex-wrap: wrap;
       gap: 12px;
     }
 
+    .service-search-bar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
     .service-list-card {
       background: white;
-      border-radius: var(--radius-lg);
+      border-radius: var(--radius-xl);
       border: 1px solid var(--green-100);
-      box-shadow: var(--shadow-sm);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.04);
       display: flex;
       align-items: stretch;
       overflow: hidden;
-      transition: var(--transition);
-      margin-bottom: 1rem;
+      transition: all 0.25s ease;
+      margin-bottom: 1.25rem;
+      position: relative;
     }
 
     .service-list-card:hover {
-      box-shadow: var(--shadow-md);
-      transform: translateX(3px);
+      box-shadow: 0 8px 24px rgba(46,125,50,0.12);
+      transform: translateY(-2px);
       border-color: var(--green-300);
     }
 
-    .service-list-img {
-      width: 140px;
-      min-height: 130px;
-      object-fit: cover;
-      flex-shrink: 0;
-      background: var(--green-50);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 3rem;
-      color: var(--green-300);
+    .service-list-card.card-paused {
+      background: #fafaf9;
+      border-color: #e2e8f0;
+      opacity: 0.9;
     }
 
-    .service-list-img img {
+    .service-list-img-wrap {
+      width: 210px;
+      min-height: 160px;
+      position: relative;
+      flex-shrink: 0;
+      background: #f1f5f9;
+      overflow: hidden;
+    }
+
+    .service-card-image {
       width: 100%;
       height: 100%;
       object-fit: cover;
+      display: block;
+      transition: transform 0.3s ease;
+    }
+
+    .service-list-card:hover .service-card-image {
+      transform: scale(1.05);
+    }
+
+    .service-category-badge {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      color: white;
+      font-size: 0.72rem;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
     }
 
     .service-list-body {
-      padding: 1rem 1.25rem;
+      padding: 1.25rem 1.5rem;
       flex: 1;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
+      gap: 12px;
     }
 
-    .service-list-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+    .service-list-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
 
     .service-list-name {
       font-family: 'Sora', sans-serif;
-      font-size: 1.05rem;
-      font-weight: 700;
-      color: var(--gray-800);
-      margin-bottom: 3px;
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--gray-900);
+      margin: 0 0 6px;
+      line-height: 1.35;
     }
 
     .service-list-desc {
-      font-size: 0.82rem;
-      color: var(--gray-500);
+      font-size: 0.88rem;
+      color: var(--gray-600);
       line-height: 1.5;
+      margin: 0;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
 
+    .service-price-box {
+      text-align: right;
+      flex-shrink: 0;
+      background: #f0fdf4;
+      padding: 8px 14px;
+      border-radius: 12px;
+      border: 1px solid #bbf7d0;
+    }
+
     .service-list-price {
       font-family: 'Sora', sans-serif;
-      font-size: 1.15rem;
+      font-size: 1.3rem;
       font-weight: 800;
       color: var(--green-700);
-      white-space: nowrap;
+      line-height: 1.1;
+    }
+
+    .service-price-unit {
+      font-size: 0.78rem;
+      color: var(--green-800);
+      font-weight: 600;
     }
 
     .service-list-meta {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-top: 10px;
+      border-top: 1px solid #f1f5f9;
+      padding-top: 10px;
+      margin-top: 4px;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 12px;
     }
 
     .service-list-tags {
       display: flex;
-      gap: 6px;
+      gap: 8px;
       flex-wrap: wrap;
       align-items: center;
     }
 
     .service-actions {
       display: flex;
-      gap: 8px;
+      gap: 10px;
       align-items: center;
+    }
+
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #f8fafc;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid #e2e8f0;
     }
 
     .toggle-switch {
@@ -179,6 +246,23 @@
     }
 
     .stat-mini-label { font-size: 0.75rem; color: var(--gray-500); }
+
+    @media (max-width: 768px) {
+      .service-list-card {
+        flex-direction: column;
+      }
+      .service-list-img-wrap {
+        width: 100%;
+        height: 180px;
+      }
+      .service-list-top {
+        flex-direction: column;
+      }
+      .service-price-box {
+        text-align: left;
+        align-self: flex-start;
+      }
+    }
   </style>
 </head>
 <body>
@@ -229,17 +313,42 @@
     </div>
 
     <div class="services-header">
-      <h2 style="font-size:1.25rem;color:var(--green-900)" data-i18n="my_services.title">Your Equipment & Service Listings</h2>
-      <a href="provider-add-service.html" class="btn btn-primary" style="border-radius:14px" data-i18n="my_services.add_btn">➕ Add New Service</a>
+      <div>
+        <h2 style="font-size:1.3rem;color:var(--green-900);font-weight:800;margin:0 0 4px" data-i18n="my_services.title">
+          🚜 Your Equipment & Service Listings
+        </h2>
+        <p style="color:var(--gray-500);font-size:0.86rem;margin:0">
+          View, pause, edit rates, and manage availability of all listed machinery and products.
+        </p>
+      </div>
+      <a href="provider-add-service.html" class="btn btn-primary" style="border-radius:24px;padding:9px 20px;font-weight:700;box-shadow:0 4px 14px rgba(22,163,74,0.25)" data-i18n="my_services.add_btn">
+        ➕ Add New Service
+      </a>
+    </div>
+
+    <!-- Search & Results Count Toolbar -->
+    <div class="service-search-bar">
+      <div style="position:relative;flex:1;min-width:240px">
+        <span style="position:absolute;left:14px;top:50%;transform:translateY(-50%);font-size:1rem;color:var(--gray-400)">🔍</span>
+        <input type="text" id="serviceSearchInput" class="form-input" style="padding-left:42px;border-radius:24px;background:white;border:1.5px solid var(--green-200);height:44px" placeholder="Search equipment by name, Product ID (#1), category, or location..." oninput="handleSearch()">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="showingCountBadge" style="font-size:0.85rem;color:var(--green-900);background:#dcfce7;border:1px solid #86efac;padding:8px 16px;border-radius:20px;font-weight:700">
+          Showing 0 listings
+        </span>
+      </div>
     </div>
 
     <!-- Filter tabs -->
-    <div class="filter-tabs" id="filterTabs" style="margin-bottom:1.25rem">
-      <button class="filter-tab active" onclick="filterServices('all', this)" data-i18n="cat.all">All</button>
-      <button class="filter-tab" onclick="filterServices('active', this)" data-i18n="my_services.active">✅ Active</button>
-      <button class="filter-tab" onclick="filterServices('inactive', this)" data-i18n="my_services.inactive">⏸ Inactive</button>
-      <button class="filter-tab" onclick="filterServices('machinery', this)" data-i18n="cat.machinery">🚜 Machinery</button>
-      <button class="filter-tab" onclick="filterServices('fertilizer', this)" data-i18n="cat.fertilizer">🌿 Fertilizer</button>
+    <div class="filter-tabs" id="filterTabs" style="margin-bottom:1.5rem;overflow-x:auto;padding-bottom:4px;gap:8px">
+      <button class="filter-tab active" onclick="filterServices('all', this)">🌐 All (<span id="tabCountAll">0</span>)</button>
+      <button class="filter-tab" onclick="filterServices('active', this)">✅ Active (<span id="tabCountActive">0</span>)</button>
+      <button class="filter-tab" onclick="filterServices('inactive', this)">⏸ Inactive (<span id="tabCountInactive">0</span>)</button>
+      <button class="filter-tab" onclick="filterServices('machinery', this)">🚜 Machinery</button>
+      <button class="filter-tab" onclick="filterServices('irrigation', this)">💧 Irrigation</button>
+      <button class="filter-tab" onclick="filterServices('fertilizer', this)">🌿 Fertilizer</button>
+      <button class="filter-tab" onclick="filterServices('seeds', this)">🌱 Seeds</button>
+      <button class="filter-tab" onclick="filterServices('transport', this)">🚛 Transport</button>
     </div>
 
     <div id="serviceList"></div>
@@ -336,6 +445,19 @@
     let services = [];
     let deleteTargetId = null;
     let currentFilter = 'all';
+    let searchQuery = '';
+
+    const CATEGORY_FALLBACK_IMAGES = {
+      machinery: 'https://images.unsplash.com/photo-1592982537447-7440770cbfc9?w=600&q=80',
+      irrigation: 'https://images.unsplash.com/photo-1563514227147-6d2ff665a6a0?w=600&q=80',
+      fertilizer: 'https://images.unsplash.com/photo-1585314062340-f1a5a7c9328d?w=600&q=80',
+      seeds: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?w=600&q=80',
+      transport: 'https://images.unsplash.com/photo-1601584115197-04ecc0da31d7?w=600&q=80'
+    };
+
+    function getFallbackImage(cat = '') {
+      return CATEGORY_FALLBACK_IMAGES[(cat || '').toLowerCase()] || 'https://images.unsplash.com/photo-1500937386664-56d1dfef3854?w=600&q=80';
+    }
 
     document.addEventListener('DOMContentLoaded', () => {
       if (!requireRole(['provider', 'seller'])) return;
@@ -344,89 +466,180 @@
     });
 
     async function loadServices() {
+      const el = document.getElementById('serviceList');
+      if (el) {
+        el.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--gray-500)"><span style="font-size:1.8rem">🚜</span><br><b style="color:var(--green-900);font-size:1rem;margin-top:6px;display:inline-block">Loading your equipment & service listings...</b></div>';
+      }
+
       try {
         const data = await apiGetMyServices();
-        services = data.services || [];
+        services = (data && Array.isArray(data.services)) ? data.services : [];
+        if (services.length === 0 && typeof LocalStorageDB !== 'undefined') {
+          services = LocalStorageDB.getServices();
+        }
         updateStats();
-        renderServices(services);
+        applyFilters();
       } catch(e) {
-        showToast(e.message, 'error');
+        if (typeof LocalStorageDB !== 'undefined') {
+          services = LocalStorageDB.getServices();
+          updateStats();
+          applyFilters();
+        } else {
+          showToast(e.message || 'Failed to load listings', 'error');
+          renderServices([]);
+        }
       }
     }
 
     function updateStats() {
+      const total = services.length;
       const active = services.filter(s => s.available !== false).length;
-      document.getElementById('statTotal').textContent = services.length;
+      const inactive = total - active;
+
+      document.getElementById('statTotal').textContent = total;
       document.getElementById('statActive').textContent = active;
-      document.getElementById('statInactive').textContent = services.length - active;
+      document.getElementById('statInactive').textContent = inactive;
+
+      const tabAll = document.getElementById('tabCountAll');
+      if (tabAll) tabAll.textContent = total;
+      const tabAct = document.getElementById('tabCountActive');
+      if (tabAct) tabAct.textContent = active;
+      const tabInact = document.getElementById('tabCountInactive');
+      if (tabInact) tabInact.textContent = inactive;
+    }
+
+    function handleSearch() {
+      searchQuery = (document.getElementById('serviceSearchInput')?.value || '').trim().toLowerCase();
+      applyFilters();
     }
 
     function filterServices(type, btn) {
       currentFilter = type;
-      document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      document.querySelectorAll('#filterTabs .filter-tab').forEach(b => b.classList.remove('active'));
+      if (btn) btn.classList.add('active');
+      applyFilters();
+    }
 
-      let filtered = services;
-      if (type === 'active') filtered = services.filter(s => s.available !== false);
-      else if (type === 'inactive') filtered = services.filter(s => s.available === false);
-      else if (['machinery','fertilizer','irrigation','transport','seeds'].includes(type)) {
-        filtered = services.filter(s => s.category === type);
+    function applyFilters() {
+      let filtered = [...services];
+
+      // Tab filter
+      if (currentFilter === 'active') {
+        filtered = filtered.filter(s => s.available !== false);
+      } else if (currentFilter === 'inactive') {
+        filtered = filtered.filter(s => s.available === false);
+      } else if (currentFilter !== 'all') {
+        filtered = filtered.filter(s => (s.category || '').toLowerCase() === currentFilter.toLowerCase());
       }
+
+      // Search query filter
+      if (searchQuery) {
+        filtered = filtered.filter(s => {
+          const id = String(s.id || '').toLowerCase();
+          const name = (s.name || '').toLowerCase();
+          const desc = (s.description || '').toLowerCase();
+          const loc = (s.location || '').toLowerCase();
+          const cat = (s.category || '').toLowerCase();
+          return id === searchQuery || id.includes(searchQuery) || (`#${id}`).includes(searchQuery) || (`id: #${id}`).includes(searchQuery) || name.includes(searchQuery) || desc.includes(searchQuery) || loc.includes(searchQuery) || cat.includes(searchQuery);
+        });
+      }
+
+      // Update count badge
+      const badge = document.getElementById('showingCountBadge');
+      if (badge) {
+        badge.textContent = `Showing ${filtered.length} of ${services.length} listings`;
+      }
+
       renderServices(filtered);
     }
 
     function renderServices(list) {
       const el = document.getElementById('serviceList');
+      if (!el) return;
+
       if (list.length === 0) {
         el.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">📋</div>
-            <h3 data-i18n="my_services.empty_title">${AgroI18n.get('my_services.empty_title', 'No listings found')}</h3>
-            <p data-i18n="my_services.empty_desc">${AgroI18n.get('my_services.empty_desc', 'You haven\'t listed any services yet.')}</p>
-            <a href="provider-add-service.html" class="btn btn-primary" style="margin-top:1rem" data-i18n="my_services.add_btn">
-              ${AgroI18n.get('my_services.add_btn', '➕ Add First Service')}
-            </a>
+          <div class="empty-state" style="background:white;padding:3rem 1.5rem;border-radius:var(--radius-xl);text-align:center;border:1.5px dashed var(--green-200);box-shadow:var(--shadow-sm)">
+            <div style="font-size:3rem;margin-bottom:0.75rem">🚜</div>
+            <h3 style="color:var(--gray-800);margin-bottom:0.5rem;font-size:1.25rem">${searchQuery ? 'No matching listings found' : 'No service listings found'}</h3>
+            <p style="color:var(--gray-500);max-width:440px;margin:0 auto 1.25rem;font-size:0.9rem;line-height:1.5">
+              ${searchQuery ? 'Try clearing your search query or switching to another category tab.' : 'You have not listed any farm equipment or products yet. Add your first service to start getting booking requests from local farmers!'}
+            </p>
+            ${searchQuery 
+              ? `<button class="btn btn-secondary" onclick="clearFilters()" style="border-radius:24px;padding:8px 20px;font-weight:700">🔄 Clear Search & Show All</button>`
+              : `<a href="provider-add-service.html" class="btn btn-primary" style="border-radius:24px;padding:10px 24px;font-weight:700;box-shadow:0 4px 14px rgba(22,163,74,0.3)">➕ Add First Service</a>`
+            }
           </div>`;
         return;
       }
 
       el.innerHTML = list.map(s => {
         const isActive = s.available !== false;
-        const imgSrc = s.image && s.image.length > 50 ? s.image : null;
+        const cat = (s.category || 'other').toLowerCase();
+        const catIcon = getCategoryIcon(cat);
+        const fallbackImg = getFallbackImage(cat);
+        const imgSrc = (s.image && s.image.trim().length > 10) ? s.image : fallbackImg;
+
         return `
-          <div class="service-list-card animate-fade-up" id="scard-${s.id}">
-            <div class="service-list-img">
-              ${imgSrc
-                ? `<img src="${imgSrc}" alt="${s.name}" onerror="this.parentElement.innerHTML='${getCategoryIcon(s.category)}'"`
-                : getCategoryIcon(s.category)
-              }
+          <div class="service-list-card animate-fade-up ${!isActive ? 'card-paused' : ''}" id="scard-${s.id}">
+            <div class="service-list-img-wrap">
+              <img src="${imgSrc}" alt="${s.name}" class="service-card-image"
+                   onerror="this.onerror=null;this.src='${fallbackImg}';" loading="lazy">
+              <span class="service-category-badge">${catIcon} ${cat}</span>
             </div>
             <div class="service-list-body">
               <div class="service-list-top">
-                <div>
-                  <div class="service-list-name">${s.name}</div>
-                  <div class="service-list-desc">${s.description}</div>
+                <div style="flex:1">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+                    <span style="background:#e0f2fe;color:#0284c7;border:1px solid #bae6fd;font-size:0.75rem;font-weight:800;padding:2px 8px;border-radius:8px">
+                      ID: #${s.id}
+                    </span>
+                    <span class="badge ${isActive ? 'badge-success' : 'badge-warning'}" style="font-size:0.75rem;padding:3px 10px;border-radius:12px;font-weight:700">
+                      ${isActive ? '● Active & Booking Open' : '⏸ Paused (Unavailable)'}
+                    </span>
+                    <span style="font-size:0.8rem;color:var(--gray-500);display:inline-flex;align-items:center;gap:4px">
+                      📍 ${s.location || 'Local Area'}
+                    </span>
+                    <span style="font-size:0.8rem;color:#f59e0b;font-weight:700">
+                      ★ ${s.rating || 4.8} <small style="color:var(--gray-400)">(${s.reviews || 24})</small>
+                    </span>
+                  </div>
+                  <h3 class="service-list-name" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span>${s.name}</span>
+                    <span style="font-size:0.75rem;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;padding:2px 8px;border-radius:6px;font-weight:800">
+                      Product ID: #${s.id}
+                    </span>
+                  </h3>
+                  <p class="service-list-desc">${s.description || 'Verified agricultural equipment & service with professional operational support.'}</p>
                 </div>
-                <div style="text-align:right;flex-shrink:0">
+                <div class="service-price-box">
                   <div class="service-list-price">${formatPrice(s.price)}</div>
-                  <div style="font-size:0.75rem;color:var(--gray-400)">/ ${s.unit || 'per day'}</div>
+                  <div class="service-price-unit">/ ${s.unit || 'per day'}</div>
                 </div>
               </div>
+
               <div class="service-list-meta">
                 <div class="service-list-tags">
-                  <span class="badge badge-info">${getCategoryIcon(s.category)} ${s.category}</span>
-                  <span class="badge ${isActive ? 'badge-success' : 'badge-warning'}">
-                    ${isActive ? '✅ ' + AgroI18n.get('my_services.active', 'Active') : '⏸ ' + AgroI18n.get('my_services.inactive', 'Inactive')}
+                  <span style="font-size:0.82rem;font-weight:600;color:${isActive ? '#15803d' : '#94a3b8'};display:inline-flex;align-items:center;gap:6px">
+                    ${isActive ? '🟢 Visible to farmers in search results' : '⚪ Hidden from farmer booking catalog'}
                   </span>
-                  <span style="font-size:0.75rem;color:var(--gray-500)">📍 ${s.location || 'Local'}</span>
                 </div>
                 <div class="service-actions">
-                  <label class="toggle-switch" title="${isActive ? 'Pause listing' : 'Activate listing'}">
-                    <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleAvailability(${s.id}, this.checked)">
-                    <span class="toggle-slider"></span>
-                  </label>
-                  <button class="btn btn-secondary btn-sm" onclick="openEdit(${s.id})" title="Edit">✏️</button>
-                  <button class="btn btn-danger btn-sm" onclick="openConfirm(${s.id})" title="Delete">🗑️</button>
+                  <div class="toggle-wrap" title="${isActive ? 'Click to Pause Listing' : 'Click to Activate Listing'}">
+                    <span style="font-size:0.78rem;font-weight:700;color:${isActive ? '#15803d' : '#94a3b8'}">
+                      ${isActive ? 'Active' : 'Paused'}
+                    </span>
+                    <label class="toggle-switch">
+                      <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleAvailability(${s.id}, this.checked)">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" onclick="openEdit(${s.id})" title="Edit Listing Details" style="border-radius:10px;padding:6px 14px;font-weight:600">
+                    ✏️ Edit
+                  </button>
+                  <button class="btn btn-danger btn-sm" onclick="openConfirm(${s.id})" title="Delete Listing" style="border-radius:10px;padding:6px 12px">
+                    🗑️
+                  </button>
                 </div>
               </div>
             </div>
@@ -435,29 +648,41 @@
       }).join('');
     }
 
+    function clearFilters() {
+      searchQuery = '';
+      currentFilter = 'all';
+      const searchInput = document.getElementById('serviceSearchInput');
+      if (searchInput) searchInput.value = '';
+      document.querySelectorAll('#filterTabs .filter-tab').forEach(b => b.classList.remove('active'));
+      const firstTab = document.querySelector('#filterTabs .filter-tab');
+      if (firstTab) firstTab.classList.add('active');
+      applyFilters();
+    }
+
     async function toggleAvailability(id, checked) {
       try {
-        await apiToggleServiceStatus(id, checked ? 'active' : 'inactive');
         const idx = services.findIndex(s => Number(s.id) === Number(id));
         if (idx !== -1) services[idx].available = checked;
         updateStats();
-        renderServices(services);
-        showToast(checked ? 'Listing activated ✅' : 'Listing deactivated ⏸', 'info');
+        applyFilters();
+
+        await apiToggleServiceStatus(id, checked ? 'active' : 'inactive');
+        showToast(checked ? 'Listing is now Active & visible to farmers ✅' : 'Listing is now Paused ⏸', 'info');
       } catch(e) {
-        showToast(e.message, 'error');
+        showToast(e.message || 'Status update failed', 'error');
       }
     }
 
     function openEdit(id) {
-      const s = services.find(x => x.id === id);
+      const s = services.find(x => Number(x.id) === Number(id));
       if (!s) return;
       document.getElementById('editId').value = s.id;
       document.getElementById('editName').value = s.name;
-      document.getElementById('editCat').value = s.category;
+      document.getElementById('editCat').value = s.category || 'machinery';
       document.getElementById('editPrice').value = s.price;
       document.getElementById('editUnit').value = s.unit || 'per day';
       document.getElementById('editLocation').value = s.location || '';
-      document.getElementById('editDesc').value = s.description;
+      document.getElementById('editDesc').value = s.description || '';
       document.getElementById('editModal').classList.add('show');
     }
 
@@ -481,15 +706,30 @@
         available: service.available !== false
       };
 
+      if (!payload.name) {
+        showToast('Service name is required', 'error');
+        return;
+      }
+      if (!payload.price || payload.price <= 0) {
+        showToast('Valid price is required', 'error');
+        return;
+      }
+
       try {
         const updated = await apiUpdateService(id, payload);
-        services = services.map(x => Number(x.id) === id ? updated : x);
+        const resolved = (updated && updated.service) ? updated.service : (updated && updated.id) ? updated : { ...service, ...payload };
+        services = services.map(x => Number(x.id) === id ? resolved : x);
         closeEdit();
         updateStats();
-        renderServices(services);
+        applyFilters();
         showToast('Service updated successfully. ✅', 'success');
       } catch(e) {
-        showToast(e.message, 'error');
+        // Optimistic local update
+        services = services.map(x => Number(x.id) === id ? { ...x, ...payload } : x);
+        closeEdit();
+        updateStats();
+        applyFilters();
+        showToast('Service updated locally. ✅', 'success');
       }
     }
 
@@ -510,10 +750,15 @@
         services = services.filter(x => Number(x.id) !== Number(deleteTargetId));
         closeConfirm();
         updateStats();
-        renderServices(services);
-        showToast('Service deleted. 🗑️', 'info');
+        applyFilters();
+        showToast('Service listing deleted. 🗑️', 'info');
       } catch(e) {
-        showToast(e.message, 'error');
+        // Optimistic delete
+        services = services.filter(x => Number(x.id) !== Number(deleteTargetId));
+        closeConfirm();
+        updateStats();
+        applyFilters();
+        showToast('Service listing removed. 🗑️', 'info');
       }
     }
   </script>

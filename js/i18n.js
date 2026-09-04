@@ -186,7 +186,7 @@ const AgroI18n = {
       'add_service.location_label': 'Service Location / Base *',
       'add_service.location_placeholder': 'e.g. Indore, Madhya Pradesh',
       'add_service.contact_label': 'Provider Contact Number',
-      'add_service.contact_placeholder': 'e.g. 9876543210',
+      'add_service.contact_placeholder': 'e.g. 8127059442',
       'add_service.description_label': 'Detailed Description *',
       'add_service.description_placeholder': 'Describe condition, HP/capacity, operator included, terms...',
       'add_service.image_label': 'Service / Equipment Photo',
@@ -260,7 +260,7 @@ const AgroI18n = {
       'prov_help.faq3_q': 'What happens when I accept a request?',
       'prov_help.faq3_a': 'Accepting a request sends an instant confirmation alert to the farmer with your contact details so you both can coordinate delivery or service execution.',
       'prov_help.faq4_q': 'How do I contact platform support?',
-      'prov_help.faq4_a': 'You can submit the support inquiry form below or call the AgroTech helpline at +91 11 1234 5678.',
+      'prov_help.faq4_a': 'You can submit the support inquiry form below or call the AgroTech helpline at +91 8127059442.',
 
       // Admin Panel
       'admin.portal_title': 'Admin Control Panel',
@@ -600,7 +600,7 @@ const AgroI18n = {
       'add_service.location_label': 'सेवा स्थान / केंद्र *',
       'add_service.location_placeholder': 'उदा. इंदौर, मध्य प्रदेश',
       'add_service.contact_label': 'प्रदाता संपर्क नंबर',
-      'add_service.contact_placeholder': 'उदा. 9876543210',
+      'add_service.contact_placeholder': 'उदा. 8127059442',
       'add_service.description_label': 'विस्तृत विवरण *',
       'add_service.description_placeholder': 'उपकरण की स्थिति, क्षमता, ऑपरेटर शामिल है या नहीं, शर्तें लिखें...',
       'add_service.image_label': 'उपकरण / सेवा की तस्वीर',
@@ -674,7 +674,7 @@ const AgroI18n = {
       'prov_help.faq3_q': 'अनुरोध स्वीकार करने पर क्या होता है?',
       'prov_help.faq3_a': 'अनुरोध स्वीकार करने पर किसान को आपके संपर्क नंबर के साथ तत्काल सूचना भेजी जाती है ताकि आप दोनों समय और डिलीवरी तय कर सकें।',
       'prov_help.faq4_q': 'सपोर्ट टीम से कैसे संपर्क करें?',
-      'prov_help.faq4_a': 'आप नीचे दिए गए फॉर्म द्वारा सहायता मांग सकते हैं या हेल्पलाइन +91 11 1234 5678 पर कॉल कर सकते हैं।',
+      'prov_help.faq4_a': 'आप नीचे दिए गए फॉर्म द्वारा सहायता मांग सकते हैं या हेल्पलाइन +91 8127059442 पर कॉल कर सकते हैं।',
 
       // Admin Panel
       'admin.portal_title': 'प्रशासक नियंत्रण कक्ष (Admin Panel)',

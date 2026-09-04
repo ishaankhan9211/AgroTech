@@ -84,7 +84,7 @@
     <button class="side-btn" onclick="showSection('requests', this)">📦 <span data-i18n="nav.admin_requests">Service Requests</span></button>
     <button class="side-btn" onclick="showSection('alerts', this)">🔔 <span data-i18n="nav.admin_alerts">Broadcast & Alerts</span></button>
     <button class="side-btn" onclick="showSection('reports', this)">📈 <span data-i18n="nav.admin_reports">Reports & Analytics</span></button>
-    <button class="side-btn" onclick="showSection('complaints', this)">⚠️ <span data-i18n="nav.admin_complaints">Complaints & Support</span></button>
+    <button class="side-btn" onclick="showSection('complaints', this)">⚠️ <span data-i18n="nav.admin_complaints">Complaints & Support</span> <span id="sideComplaintBadge" style="margin-left:auto;background:#ef4444;color:white;font-size:11px;font-weight:800;padding:2px 7px;border-radius:10px;display:none">0</span></button>
     <button class="side-btn" onclick="showSection('settings', this)">⚙️ <span data-i18n="nav.admin_settings">Settings & Security</span></button>
     
     <button class="side-btn logout" onclick="adminLogout()">🚪 <span data-i18n="nav.logout">Logout</span></button>
@@ -132,12 +132,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
     document.getElementById('adminName').textContent = m.user.name || 'Administrator';
+    updateAdminSidebarBadges();
     await showSection('dashboard', document.querySelector('.side-btn.active'));
   } catch (e) {
     clearSession();
     location.href = 'admin-login.html';
   }
 });
+
+async function updateAdminSidebarBadges() {
+  try {
+    const res = await apiRequest('/admin/complaints');
+    const openCount = (res.complaints || []).filter(c => c.status !== 'resolved').length;
+    const badge = document.getElementById('sideComplaintBadge');
+    if (badge) {
+      if (openCount > 0) {
+        badge.textContent = openCount;
+        badge.style.display = 'inline-block';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+  } catch (_) {}
+}
 
 async function showSection(sec, btn) {
   currentSection = sec;
@@ -179,7 +196,7 @@ async function showSection(sec, btn) {
 async function dashboardView() {
   const d = await apiRequest('/admin/dashboard');
   return `
-    <div class="grid-4">
+    <div class="grid-4" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr))">
       <div class="stat">
         <small data-i18n="admin.stat_total_farmers">Total Farmers</small>
         <strong>${d.total_farmers || d.users || 0}</strong>
@@ -199,6 +216,11 @@ async function dashboardView() {
         <small data-i18n="admin.stat_revenue">Transaction Volume</small>
         <strong>₹${Number(d.total_volume || d.revenue || 0).toLocaleString('en-IN')}</strong>
         <span style="font-size:12px;color:#b45309">Requests: ${d.total_requests || d.orders || 0}</span>
+      </div>
+      <div class="stat" style="cursor:pointer" onclick="showSection('complaints')">
+        <small>Support Tickets</small>
+        <strong style="color:${(d.open_complaints || 0) > 0 ? '#b91c1c' : '#1b5e20'}">${d.open_complaints || d.total_complaints || 0}</strong>
+        <span style="font-size:12px;color:${(d.open_complaints || 0) > 0 ? '#b91c1c' : '#16a34a'}">Open Complaints &rarr;</span>
       </div>
     </div>
 
@@ -363,7 +385,7 @@ async function servicesView() {
       <div class="panel-top">
         <h2>📋 ${AgroI18n.get('nav.admin_services', 'All Services & Equipment')} (${cache.services.length})</h2>
       </div>
-      <input class="search-input" placeholder="Search services by name, category, provider, location..." oninput="filterTableByQuery(this, 'servicesTable')">
+      <input class="search-input" placeholder="Search services by name, ID (#1), category, provider, location..." oninput="filterTableByQuery(this, 'servicesTable')">
       <div class="table-wrap">
         <table class="table" id="servicesTable">
           <tr>
@@ -377,7 +399,14 @@ async function servicesView() {
           </tr>
           ${cache.services.map(s => `
             <tr>
-              <td><b>${s.name}</b></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  <b>${s.name}</b>
+                  <span style="background:#e0f2fe;color:#0284c7;border:1px solid #bae6fd;font-size:11px;padding:2px 7px;border-radius:6px;font-weight:800;letter-spacing:0.3px">
+                    ID: #${s.id}
+                  </span>
+                </div>
+              </td>
               <td><span class="pill pill-active">${getCategoryIcon(s.category)} ${s.category}</span></td>
               <td>${s.provider?.name || s.users?.name || 'Verified Partner'}</td>
               <td><b>${formatPrice(s.price)}</b> / ${s.unit}</td>
@@ -525,32 +554,58 @@ async function reportsView() {
 async function complaintsView() {
   const r = await apiRequest('/admin/complaints');
   const complaints = r.complaints || [];
+  const openCount = complaints.filter(c => c.status !== 'resolved').length;
+
   return `
     <div class="panel">
-      <h2>⚠️ Support Tickets & Complaints (${complaints.length})</h2>
-      <div class="table-wrap" style="margin-top:14px">
-        <table class="table">
-          <tr>
-            <th>Ticket</th>
-            <th>User</th>
-            <th>Issue</th>
-            <th>Priority</th>
-            <th>Status</th>
-            <th>Action</th>
-          </tr>
-          ${complaints.length === 0 ? '<tr><td colspan="6" style="text-align:center;color:#64748b">No complaints filed.</td></tr>' : ''}
-          ${complaints.map(c => `
+      <div class="panel-top">
+        <div>
+          <h2>⚠️ Support Tickets & Complaints (${complaints.length})</h2>
+          <small style="color:#64748b">Direct tickets submitted by farmers and service providers from help center</small>
+        </div>
+        <span class="pill ${openCount > 0 ? 'pill-pending' : 'pill-active'}">
+          ${openCount} Open Ticket${openCount === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      <input type="text" class="search-input" placeholder="🔍 Search complaints by user, topic, phone or ticket ID..." onkeyup="filterTableByQuery(this, 'complaintsTable')">
+
+      <div class="table-wrap" style="margin-top:10px">
+        <table class="table" id="complaintsTable">
+          <thead>
             <tr>
-              <td><b>#C-${c.id}</b></td>
-              <td>${c.users?.name || 'User'}</td>
-              <td>${c.subject}<br><small style="color:#64748b">${c.description}</small></td>
-              <td><span class="pill pill-pending">${c.priority}</span></td>
-              <td><span class="pill pill-${c.status === 'resolved' ? 'active' : 'pending'}">${c.status}</span></td>
-              <td>
-                ${c.status !== 'resolved' ? `<button class="mini approve" onclick="resolveComplaint(${c.id})">Resolve</button>` : 'Resolved'}
-              </td>
+              <th>Ticket</th>
+              <th>User & Contact</th>
+              <th>Issue & Description</th>
+              <th>Priority</th>
+              <th>Status</th>
+              <th>Date</th>
+              <th>Action</th>
             </tr>
-          `).join('')}
+          </thead>
+          <tbody>
+            ${complaints.length === 0 ? '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:2rem">No complaints registered yet. Platform operations running smoothly! ✅</td></tr>' : ''}
+            ${complaints.map(c => `
+              <tr>
+                <td><b>#C-${c.id}</b></td>
+                <td>
+                  <strong>${c.users?.name || c.user_name || 'Farmer'}</strong><br>
+                  <span style="font-size:12px;color:#166534">📞 ${c.users?.phone || c.user_phone || '8127059442'}</span><br>
+                  <small style="color:#64748b">✉️ ${c.users?.email || c.user_email || 'farmer@agrotech.com'}</small>
+                </td>
+                <td>
+                  <b style="color:#0f172a">${c.subject}</b>
+                  <p style="color:#475569;margin:4px 0 0;font-size:13px;line-height:1.4">${c.description}</p>
+                </td>
+                <td><span class="pill ${c.priority === 'high' ? 'pill-blocked' : 'pill-pending'}">${(c.priority || 'medium').toUpperCase()}</span></td>
+                <td><span class="pill ${c.status === 'resolved' ? 'pill-active' : 'pill-pending'}">${(c.status || 'open').toUpperCase()}</span></td>
+                <td style="font-size:12px;color:#64748b;white-space:nowrap">${c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN') : 'Recent'}</td>
+                <td>
+                  ${c.status !== 'resolved' ? `<button class="mini approve" onclick="resolveComplaint(${c.id})">Resolve ✓</button>` : '<span style="color:#16a34a;font-weight:700">Resolved ✓</span>'}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
         </table>
       </div>
     </div>
@@ -561,6 +616,7 @@ async function resolveComplaint(id) {
   try {
     await apiRequest(`/admin/complaints/${id}/status`, { method: 'PUT', body: JSON.stringify({ status: 'resolved' }) });
     showToast('Complaint marked as resolved ✅', 'success');
+    updateAdminSidebarBadges();
     await showSection('complaints');
   } catch (err) {
     showToast(err.message, 'error');

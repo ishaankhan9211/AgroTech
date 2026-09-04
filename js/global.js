@@ -16,7 +16,7 @@ const AgroData = {
       id: 'usr-farmer-01',
       name: "Madhur Pratap Singh",
       email: "farmer@agrotech.com",
-      phone: "8127059423",
+      phone: "8127059442",
       location: "Indore, MP",
       role: "farmer",
       status: "active"
@@ -278,10 +278,26 @@ const AgroLocation = {
         return;
       }
       navigator.geolocation.getCurrentPosition(
-        (pos) => {
+        async (pos) => {
           const lat = pos.coords.latitude;
           const lon = pos.coords.longitude;
-          const loc = this.setCurrentLocation('📍 Live GPS Location', lat, lon, true);
+          let placeName = 'Indore, MP';
+
+          // Try reverse geocoding to resolve exact city / state from Google / Open geocoding
+          try {
+            const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=en`);
+            if (res.ok) {
+              const data = await res.json();
+              const city = data.city || data.locality || data.principalSubdivision || 'Indore';
+              const state = data.principalSubdivisionCode ? data.principalSubdivisionCode.replace('IN-', '') : (data.principalSubdivision || 'MP');
+              placeName = `${city}, ${state}`;
+            }
+          } catch (_) {
+            placeName = `GPS: ${lat.toFixed(2)}°N, ${lon.toFixed(2)}°E`;
+          }
+
+          const loc = this.setCurrentLocation(placeName, lat, lon, true);
+          loc.mapsUrl = `https://www.google.com/maps?q=${lat},${lon}`;
           resolve(loc);
         },
         (err) => {
@@ -292,6 +308,41 @@ const AgroLocation = {
     });
   }
 };
+
+// Global Live Location Google / GPS Sync
+async function fetchLiveGoogleLocation(userTriggered = false) {
+  const locEl = document.getElementById('liveLocationText');
+  const coordsEl = document.getElementById('liveLocationCoords');
+  const mapsLink = document.getElementById('liveGoogleMapsLink');
+  const farmerLoc = document.getElementById('farmerCurrentLoc');
+
+  if (locEl) {
+    locEl.innerHTML = '<span class="live-pulse-dot"></span> 🛰️ Fetching Live Location from Google GPS...';
+  }
+
+  try {
+    const loc = await AgroLocation.detectGPS();
+    if (locEl) {
+      locEl.innerHTML = `<span class="live-pulse-dot"></span> 📍 <b>${loc.name}</b>`;
+    }
+    if (coordsEl && loc.lat && loc.lon) {
+      coordsEl.textContent = `(${loc.lat.toFixed(4)}°N, ${loc.lon.toFixed(4)}°E)`;
+    }
+    if (mapsLink && loc.lat && loc.lon) {
+      mapsLink.href = `https://www.google.com/maps?q=${loc.lat},${loc.lon}`;
+      mapsLink.style.display = 'inline-flex';
+    }
+    if (farmerLoc) farmerLoc.textContent = loc.name;
+    if (userTriggered) showToast(`📍 Live Location detected: ${loc.name}`, 'success');
+  } catch (err) {
+    const curr = AgroLocation.getCurrentLocation();
+    if (locEl) {
+      locEl.innerHTML = `<span class="live-pulse-dot"></span> 📍 <b>${curr.name || 'Indore, MP'}</b>`;
+    }
+    if (farmerLoc) farmerLoc.textContent = curr.name || 'Indore, MP';
+    if (userTriggered) showToast('Could not access live GPS. Showing regional hub.', 'info');
+  }
+}
 
 // ==================== AgroWorkDone: Work Completion Workflow for Farmer & Provider ====================
 const AgroWorkDone = {
@@ -444,46 +495,75 @@ function renderNavbar(activePage = '') {
   const role = AgroData.getRole();
   const t = (k, fb) => (typeof AgroI18n !== 'undefined' ? AgroI18n.get(k, fb) : fb);
   const langToggleHtml = typeof AgroI18n !== 'undefined' ? AgroI18n.renderLanguageToggle() : '';
-  const firstName = (user.name || 'User').split(' ')[0];
+  // Count unread alerts for blinking notification badge
+  let unreadAlertsCount = 0;
+  try {
+    const rawAlerts = localStorage.getItem('agro_alerts');
+    if (rawAlerts) {
+      const parsed = JSON.parse(rawAlerts);
+      unreadAlertsCount = parsed.filter(a => !a.is_read).length;
+    }
+  } catch (_) {}
+
+  // Check active jobs for dynamic pulsating badge
+  let hasActiveJobs = false;
+  try {
+    const rawReqs = localStorage.getItem('agro_service_requests');
+    if (rawReqs) {
+      const parsedReqs = JSON.parse(rawReqs);
+      hasActiveJobs = parsedReqs.some(r => r.status === 'accepted' || r.status === 'in_progress');
+    }
+  } catch (_) {}
+
+  const firstName = (user && user.name) ? user.name.split(' ')[0] : 'My Account';
+  const hasNewAlerts = unreadAlertsCount > 0;
+  const alertBadgeHtml = hasNewAlerts 
+    ? `<span class="nav-new-badge pulse-blink" title="New Alerts">${unreadAlertsCount} NEW</span>` 
+    : `<span class="nav-new-badge pulse-blink" style="display:none" id="navAlertsBlink">NEW</span>`;
+  const alertBtnBlinkClass = hasNewAlerts ? ' nav-btn-blinking' : '';
+
+  const jobDotHtml = hasActiveJobs 
+    ? `<span class="nav-pulse-dot" title="Job in Progress"></span>` 
+    : '';
 
   let linksHtml = '';
 
   if (role === 'admin') {
     linksHtml = `
-      <li><a href="admin-panel.html" class="${activePage === 'admin' ? 'active' : ''}">🛡️ ${t('nav.admin_dashboard', 'Admin Panel')}</a></li>
+      <li><a href="admin-panel.html" title="Admin Dashboard (एडमिन पैनल)" class="nav-btn ${activePage === 'admin' ? 'active' : ''}">🛡️ <span>${t('nav.admin_dashboard', 'Admin Panel')}</span></a></li>
       <li>${langToggleHtml}</li>
-      <li><button class="btn-logout" onclick="handleLogout()">🚪 ${t('nav.logout', 'Logout')}</button></li>
+      <li><button class="nav-btn nav-btn-logout" title="Logout (लॉगआउट)" onclick="handleLogout()">🚪 <span>${t('nav.logout', 'Logout')}</span></button></li>
     `;
   } else if (role === 'provider' || role === 'seller') {
     linksHtml = `
-      <li><a href="provider-dashboard.html" class="${activePage === 'home' || activePage === 'dashboard' ? 'active' : ''}">📊 ${t('nav.provider_dashboard', 'Dashboard')}</a></li>
-      <li><a href="provider-services.html" class="${activePage === 'services' || activePage === 'my_services' ? 'active' : ''}">🚜 ${t('nav.my_services', 'My Services')}</a></li>
-      <li><a href="provider-add-service.html" class="${activePage === 'add_service' ? 'active' : ''}">➕ ${t('nav.add_service', 'Add Service')}</a></li>
-      <li><a href="provider-requests.html" class="${activePage === 'requests' ? 'active' : ''}">📥 ${t('nav.provider_requests', 'Requests')}</a></li>
-      <li><a href="provider-alerts.html" class="${activePage === 'alerts' || activePage === 'notif' ? 'active' : ''}">🔔 ${t('nav.provider_alerts', 'Alerts')}</a></li>
-      <li><a href="provider-help.html" class="${activePage === 'help' ? 'active' : ''}">❓ ${t('nav.provider_help', 'Help')}</a></li>
-      <li><a href="provider-profile.html" class="${activePage === 'account' || activePage === 'profile' ? 'active' : ''}">👤 ${firstName}</a></li>
+      <li><a href="provider-dashboard.html" title="Dashboard (डैशबोर्ड)" class="nav-btn ${activePage === 'home' || activePage === 'dashboard' ? 'active' : ''}">📊 <span>${t('nav.provider_dashboard', 'Dashboard')}</span></a></li>
+      <li><a href="provider-services.html" title="My Services (मेरी सेवाएं)" class="nav-btn ${activePage === 'services' || activePage === 'my_services' ? 'active' : ''}">🚜 <span>${t('nav.my_services', 'My Services')}</span></a></li>
+      <li><a href="provider-add-service.html" title="Add Service (सेवा जोड़ें)" class="nav-btn ${activePage === 'add_service' ? 'active' : ''}">➕ <span>${t('nav.add_service', 'Add Service')}</span></a></li>
+      <li><a href="provider-requests.html" title="Requests (अनुरोध)" class="nav-btn ${activePage === 'requests' ? 'active' : ''}">📥 <span>${t('nav.provider_requests', 'Requests')}</span>${jobDotHtml}</a></li>
+      <li><a href="provider-alerts.html" title="Recent Alerts (हालिया अलर्ट)" class="nav-btn ${activePage === 'alerts' || activePage === 'notif' ? 'active' : ''}${alertBtnBlinkClass}">🔔 <span>${t('nav.provider_alerts', 'Recent Alerts')}</span>${alertBadgeHtml}</a></li>
+      <li><a href="provider-help.html" title="Help & Support (सहायता और समर्थन)" class="nav-btn ${activePage === 'help' ? 'active' : ''}">❓ <span>${t('nav.provider_help', 'Help & Support')}</span></a></li>
+      <li><a href="provider-profile.html" title="My Account (मेरा खाता)" class="nav-btn ${activePage === 'account' || activePage === 'profile' ? 'active' : ''}">👤 <span>${firstName}</span></a></li>
       <li>${langToggleHtml}</li>
-      <li><button class="btn-logout" onclick="handleLogout()">🚪 ${t('nav.logout', 'Logout')}</button></li>
+      <li><button class="nav-btn nav-btn-logout" title="Logout (लॉगआउट)" onclick="handleLogout()">🚪 <span>${t('nav.logout', 'Logout')}</span></button></li>
     `;
   } else {
-    // Farmer Navbar (With prominent Hindi/English toggle)
+    // Farmer Navbar (Clean, Distinct Buttons with Titles & Non-repeating)
     linksHtml = `
-      <li><a href="home.html" class="${activePage === 'home' || activePage === 'dashboard' ? 'active' : ''}">🏠 ${t('nav.home', 'Dashboard')}</a></li>
-      <li><a href="search.html" class="${activePage === 'search' ? 'active' : ''}">🔍 ${t('nav.find_services', 'Find Services')}</a></li>
-      <li><a href="my_purchase.html" class="${activePage === 'purchases' || activePage === 'requests' ? 'active' : ''}">📋 ${t('nav.my_requests', 'My Requests')}</a></li>
-      <li><a href="notifications.html" class="${activePage === 'notif' || activePage === 'alerts' ? 'active' : ''}">🔔 ${t('nav.alerts', 'Alerts')}</a></li>
-      <li><a href="help.html" class="${activePage === 'help' ? 'active' : ''}">❓ ${t('nav.help', 'Help')}</a></li>
-      <li><a href="myaccount.html" class="${activePage === 'account' || activePage === 'profile' ? 'active' : ''}">👤 ${firstName}</a></li>
+      <li><a href="home.html" title="Dashboard" class="nav-btn ${activePage === 'home' || activePage === 'dashboard' ? 'active' : ''}">🏠 <span>${t('nav.home', 'Dashboard')}</span></a></li>
+      <li><a href="search.html" title="Find Services" class="nav-btn ${activePage === 'search' ? 'active' : ''}">🔍 <span>${t('nav.find_services', 'Find Services')}</span></a></li>
+      <li><a href="my_purchase.html" title="My Request" class="nav-btn ${activePage === 'purchases' || activePage === 'requests' ? 'active' : ''}">📋 <span>${t('nav.my_requests', 'My Request')}</span>${jobDotHtml}</a></li>
+      <li><a href="notifications.html" title="Recent Alert" class="nav-btn ${activePage === 'notif' || activePage === 'alerts' ? 'active' : ''}${alertBtnBlinkClass}">🔔 <span>${t('nav.alerts', 'Recent Alert')}</span>${alertBadgeHtml}</a></li>
+      <li><a href="help.html" title="Help and Support" class="nav-btn ${activePage === 'help' ? 'active' : ''}">❓ <span>${t('nav.help', 'Help & Support')}</span></a></li>
+      <li><a href="myaccount.html" title="My Account" class="nav-btn ${activePage === 'account' || activePage === 'profile' ? 'active' : ''}">👤 <span>${user.name ? firstName : 'My Account'}</span></a></li>
       <li>${langToggleHtml}</li>
-      <li><button class="btn-logout" onclick="handleLogout()">🚪 ${t('nav.logout', 'Logout')}</button></li>
+      <li><button class="nav-btn nav-btn-logout" title="Logout" onclick="handleLogout()">🚪 <span>${t('nav.logout', 'Logout')}</span></button></li>
     `;
   }
 
   const logoHref = role === 'admin' ? 'admin-panel.html' : (role === 'provider' || role === 'seller') ? 'provider-dashboard.html' : 'home.html';
 
   nav.innerHTML = `
-    <a href="${logoHref}" class="navbar-logo">
+    <a href="${logoHref}" class="navbar-logo" title="Agrotech">
       <div class="logo-icon">🌱</div>
       Agro<span>TECH</span>
     </a>
@@ -492,7 +572,7 @@ function renderNavbar(activePage = '') {
     </ul>
     <div style="display:flex;align-items:center;gap:8px">
       <div class="mobile-lang">${langToggleHtml}</div>
-      <button class="mobile-menu-btn" onclick="toggleMobileMenu()">☰</button>
+      <button class="mobile-menu-btn" onclick="toggleMobileMenu()" title="Toggle Menu">☰</button>
     </div>
   `;
 }

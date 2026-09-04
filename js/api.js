@@ -50,7 +50,7 @@ const LocalStorageDB = {
         id: 'usr-farmer-01',
         name: 'Madhur Pratap Singh',
         email: 'farmer@agrotech.com',
-        phone: '8127059423',
+        phone: '8127059442',
         password: 'farmer123',
         location: 'Indore, MP',
         role: 'farmer',
@@ -132,7 +132,7 @@ const LocalStorageDB = {
         request_id: 'REQ-1001',
         farmer_id: 'usr-farmer-01',
         farmer_name: 'Madhur Pratap Singh',
-        farmer_phone: '8127059423',
+        farmer_phone: '8127059442',
         provider_id: 'usr-provider-01',
         service_id: 1,
         service_name: 'Mahindra 575 DI Tractor Rental',
@@ -151,7 +151,7 @@ const LocalStorageDB = {
         request_id: 'REQ-1002',
         farmer_id: 'usr-farmer-01',
         farmer_name: 'Madhur Pratap Singh',
-        farmer_phone: '8127059423',
+        farmer_phone: '8127059442',
         provider_id: 'usr-provider-01',
         service_id: 5,
         service_name: 'Automatic Drip Irrigation Kit',
@@ -215,6 +215,36 @@ const LocalStorageDB = {
     this.saveAlerts(list);
   },
 
+  getComplaints() {
+    const defaultComplaints = [
+      {
+        id: 101,
+        user_id: 'usr-farmer-01',
+        subject: 'Tractor Booking Equipment Delay',
+        description: 'Tractor operator reached 45 minutes late during morning slot due to fuel refill in sector 4.',
+        priority: 'medium',
+        status: 'open',
+        created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
+        users: { name: 'Madhur Pratap Singh', email: 'farmer@agrotech.com', phone: '8127059442' }
+      }
+    ];
+    const stored = localStorage.getItem('agro_complaints');
+    if (!stored) {
+      localStorage.setItem('agro_complaints', JSON.stringify(defaultComplaints));
+      return defaultComplaints;
+    }
+    try {
+      const parsed = JSON.parse(stored);
+      return Array.isArray(parsed) ? parsed : defaultComplaints;
+    } catch (_) {
+      return defaultComplaints;
+    }
+  },
+
+  saveComplaints(complaints) {
+    localStorage.setItem('agro_complaints', JSON.stringify(complaints));
+  },
+
   handleLocalRequest(path, options = {}) {
     const method = (options.method || 'GET').toUpperCase();
     const body = options.body ? JSON.parse(options.body) : {};
@@ -271,6 +301,23 @@ const LocalStorageDB = {
 
       return {
         message: `OTP sent successfully! (Dev Code: ${otp})`,
+        debug_otp: otp,
+        email
+      };
+    }
+
+    // Resend OTP
+    if (path === '/auth/register/resend-otp' && method === 'POST') {
+      const email = (body.email || '').toLowerCase().trim();
+      const otps = JSON.parse(localStorage.getItem('agro_pending_otps') || '{}');
+      const otp = '123456';
+      if (otps[email]) {
+        otps[email].otp = otp;
+        otps[email].created = Date.now();
+        localStorage.setItem('agro_pending_otps', JSON.stringify(otps));
+      }
+      return {
+        message: `Fresh OTP sent successfully! (Dev Code: ${otp})`,
         debug_otp: otp,
         email
       };
@@ -368,7 +415,8 @@ const LocalStorageDB = {
     if (path === '/services/my' && method === 'GET') {
       const services = this.getServices();
       const myId = currentUser?.id || 'usr-provider-01';
-      return { services: services.filter(s => s.posted_by === myId || !s.posted_by) };
+      const myServices = services.filter(s => s.posted_by === myId || !s.posted_by);
+      return { services: myServices.length > 0 ? myServices : services };
     }
 
     // 10. Service Create (POST)
@@ -423,7 +471,7 @@ const LocalStorageDB = {
         request_id: 'REQ-' + String(Date.now()).slice(-7),
         farmer_id: currentUser?.id || 'usr-farmer-01',
         farmer_name: currentUser?.name || 'Farmer',
-        farmer_phone: currentUser?.phone || '8127059423',
+        farmer_phone: currentUser?.phone || '8127059442',
         provider_id: body.provider_id || 'usr-provider-01',
         service_id: body.service_id,
         service_name: body.service_name,
@@ -475,6 +523,32 @@ const LocalStorageDB = {
       r.status = body.status;
       this.saveRequests(reqs);
 
+      // Manage equipment active state on provider portal:
+      // When accepted: equipment is busy (available = false)
+      // When completed (farmer confirms work done): equipment is active again (available = true)!
+      const services = this.getServices();
+      const svc = services.find(s => Number(s.id) === Number(r.service_id));
+      if (svc) {
+        if (body.status === 'accepted') {
+          svc.available = false;
+          svc.is_in_progress = true;
+          this.saveServices(services);
+        } else if (body.status === 'completed') {
+          svc.available = true;
+          svc.is_in_progress = false;
+          this.saveServices(services);
+
+          // Alert provider that product is active again
+          this.addAlert({
+            user_id: r.provider_id,
+            audience: 'provider',
+            type: 'status',
+            title: 'Product Active & Work Done! 🏁',
+            message: `Farmer ${r.farmer_name} confirmed Work Done for '${r.service_name}'. Product is now ACTIVE and open for bookings!`
+          });
+        }
+      }
+
       // Add alert for farmer
       this.addAlert({
         user_id: r.farmer_id,
@@ -519,6 +593,7 @@ const LocalStorageDB = {
       const services = this.getServices();
       const reqs = this.getRequests();
       const totalVolume = reqs.reduce((s, r) => s + Number(r.price || 0), 0);
+      const complaints = this.getComplaints();
       return {
         total_farmers: farmers.length,
         active_farmers: farmers.filter(f => f.status === 'active').length,
@@ -530,6 +605,8 @@ const LocalStorageDB = {
         pending_requests: reqs.filter(r => r.status === 'pending').length,
         completed_requests: reqs.filter(r => r.status === 'completed').length,
         total_volume: totalVolume,
+        total_complaints: complaints.length,
+        open_complaints: complaints.filter(c => c.status !== 'resolved').length,
         revenue: totalVolume,
         users: users.length,
         products: services.length,
@@ -593,6 +670,56 @@ const LocalStorageDB = {
       return { message: 'Notification broadcasted successfully.' };
     }
 
+    // 28. Complaints POST (Farmer/Provider register complaint)
+    if (path === '/complaints' && method === 'POST') {
+      const complaints = this.getComplaints();
+      const newC = {
+        id: Date.now(),
+        user_id: currentUser?.id || 'usr-farmer-01',
+        subject: body.subject || 'Support Ticket',
+        description: body.description || '',
+        priority: body.priority || 'medium',
+        status: 'open',
+        created_at: new Date().toISOString(),
+        users: {
+          name: currentUser?.name || 'Madhur Pratap Singh',
+          email: currentUser?.email || 'farmer@agrotech.com',
+          phone: currentUser?.phone || '8127059442'
+        }
+      };
+      complaints.unshift(newC);
+      this.saveComplaints(complaints);
+
+      // Alert for admin
+      this.addAlert({
+        user_id: null,
+        audience: 'admin',
+        type: 'complaint',
+        title: `⚠️ New Complaint: ${newC.subject}`,
+        message: `${newC.users.name} (${newC.users.phone}) filed: ${newC.description.slice(0, 90)}`
+      });
+
+      return newC;
+    }
+
+    // 29. Admin Complaints GET
+    if (path === '/admin/complaints' && method === 'GET') {
+      return { complaints: this.getComplaints() };
+    }
+
+    // 30. Admin Complaint Status Update (PUT)
+    if (path.startsWith('/admin/complaints/') && path.endsWith('/status') && method === 'PUT') {
+      const parts = path.split('/');
+      const cId = parseInt(parts[3]);
+      const complaints = this.getComplaints();
+      const c = complaints.find(x => Number(x.id) === Number(cId));
+      if (c) {
+        c.status = body.status || 'resolved';
+        this.saveComplaints(complaints);
+      }
+      return c || { status: 'resolved' };
+    }
+
     // Legacy fallbacks
     if (path.startsWith('/products')) {
       return { products: this.getServices() };
@@ -614,7 +741,7 @@ async function apiRequest(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const timeoutMs = Number(options.timeoutMs || 3000);
+  const timeoutMs = Number(options.timeoutMs || 10000);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -641,6 +768,15 @@ async function apiRequest(path, options = {}) {
     } catch (_) {}
 
     if (!res.ok) {
+      if (res.status === 401) {
+        console.warn(`[AgroTech API] 401 Unauthorized for ${path}. Attempting local offline fallback.`);
+        try {
+          const fallback = LocalStorageDB.handleLocalRequest(path, options);
+          if (fallback !== null && fallback !== undefined) {
+            return fallback;
+          }
+        } catch (_) {}
+      }
       throw new Error(data.detail || data.message || `Request failed (${res.status})`);
     }
     return data;
@@ -681,6 +817,13 @@ async function apiRegister(payload) {
   return apiRequest('/auth/register', {
     method: 'POST',
     body: JSON.stringify(payload)
+  });
+}
+
+async function apiResendRegisterOtp(email) {
+  return apiRequest('/auth/register/resend-otp', {
+    method: 'POST',
+    body: JSON.stringify({ email })
   });
 }
 
