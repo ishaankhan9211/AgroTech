@@ -633,8 +633,74 @@ const LocalStorageDB = {
     }
 
     // 23. Admin Users GET
-    if (path === '/admin/users') {
-      return { users: this.getUsers() };
+    if (path.startsWith('/admin/users') && method === 'GET') {
+      const otps = JSON.parse(localStorage.getItem('agro_pending_otps') || '{}');
+      const pending = Object.keys(otps).map(k => ({
+        email: k,
+        name: otps[k].payload?.name || 'User',
+        phone: otps[k].payload?.phone || '',
+        location: otps[k].payload?.location || '',
+        role: otps[k].payload?.role || 'farmer',
+        otp_code: otps[k].otp || '123456',
+        created_at: new Date(otps[k].created || Date.now()).toISOString()
+      }));
+      return { users: this.getUsers(), pending };
+    }
+
+    // 23b. Admin Pending Users GET
+    if (path.startsWith('/admin/pending-users') && method === 'GET') {
+      const otps = JSON.parse(localStorage.getItem('agro_pending_otps') || '{}');
+      const pending = Object.keys(otps).map(k => ({
+        email: k,
+        name: otps[k].payload?.name || 'User',
+        phone: otps[k].payload?.phone || '',
+        location: otps[k].payload?.location || '',
+        role: otps[k].payload?.role || 'farmer',
+        otp_code: otps[k].otp || '123456',
+        created_at: new Date(otps[k].created || Date.now()).toISOString()
+      }));
+      return { pending_users: pending };
+    }
+
+    // 23c. Admin Activate Pending User POST
+    if (path.startsWith('/admin/pending-users/') && path.endsWith('/activate') && method === 'POST') {
+      const email = decodeURIComponent(path.split('/')[3]).toLowerCase();
+      const otps = JSON.parse(localStorage.getItem('agro_pending_otps') || '{}');
+      const p = otps[email];
+      if (!p) throw new Error('Pending registration not found.');
+      const users = this.getUsers();
+      const newUser = {
+        id: 'usr-' + Date.now(),
+        name: p.payload?.name || 'User',
+        email: email,
+        phone: p.payload?.phone || '',
+        location: p.payload?.location || '',
+        role: p.payload?.role || 'farmer',
+        status: 'active',
+        created_at: new Date().toISOString()
+      };
+      users.push(newUser);
+      this.saveUsers(users);
+      delete otps[email];
+      localStorage.setItem('agro_pending_otps', JSON.stringify(otps));
+      return { message: `User ${email} activated successfully!`, user: newUser };
+    }
+
+    // 23d. Admin Dismiss Pending User DELETE
+    if (path.startsWith('/admin/pending-users/') && method === 'DELETE') {
+      const email = decodeURIComponent(path.split('/')[3]).toLowerCase();
+      const otps = JSON.parse(localStorage.getItem('agro_pending_otps') || '{}');
+      delete otps[email];
+      localStorage.setItem('agro_pending_otps', JSON.stringify(otps));
+      return { message: 'Pending registration dismissed.' };
+    }
+
+    // 23e. Admin Delete User DELETE
+    if (path.startsWith('/admin/users/') && !path.endsWith('/status') && method === 'DELETE') {
+      const uid = path.split('/')[3];
+      const users = this.getUsers().filter(x => x.id !== uid);
+      this.saveUsers(users);
+      return { message: 'User deleted successfully.' };
     }
 
     // 24. Admin User Status Update

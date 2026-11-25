@@ -2,6 +2,15 @@
 
 ## 🚀 1-Click Startup (Recommended)
 
+### 0. Build / Initialize Database (Optional / 1-Click)
+Double-click `build_database.bat` or run:
+```bash
+python backend/build_database.py
+```
+- Creates all 7 tables with constraints, performance indexes, and seeds default accounts and machinery listings.
+- To reset and rebuild from scratch: `python backend/build_database.py --reset`
+- For PostgreSQL / Supabase: execute `backend/schema.sql` in the Supabase SQL Editor.
+
 ### 1. Start Backend API Server
 Double-click `start_backend.bat` or run in terminal:
 ```bash
@@ -9,7 +18,7 @@ Double-click `start_backend.bat` or run in terminal:
 ```
 - Backend runs on `http://127.0.0.1:8000`
 - Interactive API Swagger docs available at `http://127.0.0.1:8000/docs`
-- Self-contained SQLite database (`backend/agrotech.db`) is automatically initialized and seeded with all products, demo farmer, and admin users on first run!
+- Self-contained SQLite database (`backend/agrotech.db`) is automatically initialized and verified!
 
 ### 2. Start Frontend
 Double-click `start_frontend.bat` or run in terminal:

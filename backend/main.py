@@ -47,13 +47,19 @@ from email.message import EmailMessage
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Header, status, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from weather import router as weather_router
 from pydantic import BaseModel, EmailStr, Field
 
 # Base directories
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 load_dotenv(BASE_DIR / '.env')
+
+# Support both `uvicorn main:app` from this folder and
+# `uvicorn backend.main:app` from the project root.
+try:
+    from .weather import router as weather_router
+except ImportError:
+    from weather import router as weather_router
 
 # Configuration
 SUPABASE_URL = os.getenv('SUPABASE_URL', '').strip()
@@ -74,15 +80,39 @@ SMTP_USE_SSL = os.getenv('SMTP_USE_SSL', 'false').strip().lower() in {'1', 'true
 
 SQLITE_DB_PATH = BASE_DIR / 'agrotech.db'
 
-# Supabase Client setup if available
-supabase_client = None
-if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY and not SUPABASE_URL.startswith('http://localhost'):
+# Supabase Cloud Database Integration
+try:
     try:
-        from supabase import create_client
-        supabase_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-    except Exception as exc:
-        print(f"[AgroTech] Supabase init failed ({exc}). Using local SQLite database.")
-        supabase_client = None
+        from .supabase_client import (
+            supabase_client,
+            sync_user,
+            sync_delete_user,
+            sync_otp,
+            sync_delete_otp,
+            sync_service,
+            sync_service_request,
+            sync_alert,
+            sync_complaint,
+            sync_all_from_supabase
+        )
+    except ImportError:
+        from supabase_client import (
+            supabase_client,
+            sync_user,
+            sync_delete_user,
+            sync_otp,
+            sync_delete_otp,
+            sync_service,
+            sync_service_request,
+            sync_alert,
+            sync_complaint,
+            sync_all_from_supabase
+        )
+except Exception as _sup_err:
+    print(f"[AgroTech] Supabase module import note: {_sup_err}")
+    supabase_client = None
+    sync_user = sync_delete_user = sync_otp = sync_delete_otp = lambda *args, **kwargs: None
+    sync_service = sync_service_request = sync_alert = sync_complaint = sync_all_from_supabase = lambda *args, **kwargs: None
 
 def hash_password(password: str) -> str:
     salt = secrets.token_hex(16)
@@ -401,6 +431,17 @@ app.add_middleware(
 
 app.include_router(weather_router)
 
+@app.on_event("startup")
+def app_startup():
+    try:
+        conn = local_db.get_connection()
+        sync_all_from_supabase(conn)
+        conn.close()
+        print("[AgroTech] Startup: Cloud & Local Databases synchronized successfully.")
+    except Exception as ex:
+        print(f"[AgroTech] Startup sync note: {ex}")
+
+
 # Pydantic Schemas
 class RegisterIn(BaseModel):
     name: str = Field(min_length=2, max_length=100)
@@ -598,9 +639,11 @@ def health():
     cur.execute("SELECT COUNT(*) FROM service_requests")
     r_cnt = cur.fetchone()[0]
     conn.close()
+    is_sup = bool(supabase_client and supabase_client.is_healthy())
     return {
         'status': 'ok',
-        'database': 'sqlite' if supabase_client is None else 'supabase',
+        'database': 'supabase (synced)' if is_sup else 'sqlite',
+        'supabase_connected': is_sup,
         'users_count': u_cnt,
         'services_count': s_cnt,
         'requests_count': r_cnt,
@@ -653,6 +696,18 @@ def register(payload: RegisterIn, background_tasks: BackgroundTasks):
     conn.close()
 
     print(f"\n=======================================================\n[AgroTech AUTH] OTP for {payload.email} is: {otp}\n=======================================================\n")
+    background_tasks.add_task(sync_otp, {
+        'email': payload.email.lower().strip(),
+        'name': payload.name.strip(),
+        'phone': payload.phone.strip(),
+        'password_hash': pw_hash,
+        'location': payload.location.strip(),
+        'role': role_norm,
+        'otp_code': otp,
+        'otp_hash': otp_h,
+        'expires_at': expires_at,
+        'attempts': 0
+    })
     if SMTP_HOST and SMTP_FROM_EMAIL:
         background_tasks.add_task(send_registration_otp_email, payload.email, payload.name, otp)
 
@@ -688,6 +743,18 @@ def resend_registration_otp(payload: ResendOtpIn, background_tasks: BackgroundTa
     conn.close()
 
     print(f"\n=======================================================\n[AgroTech AUTH] RESENT OTP for {payload.email} is: {otp}\n=======================================================\n")
+    background_tasks.add_task(sync_otp, {
+        'email': payload.email.lower().strip(),
+        'name': pending.get('name', 'User'),
+        'phone': pending.get('phone', ''),
+        'password_hash': pending.get('password_hash', ''),
+        'location': pending.get('location', ''),
+        'role': pending.get('role', 'farmer'),
+        'otp_code': otp,
+        'otp_hash': otp_h,
+        'expires_at': expires_at,
+        'attempts': 0
+    })
     if SMTP_HOST and SMTP_FROM_EMAIL:
         background_tasks.add_task(send_registration_otp_email, payload.email, pending.get('name', 'User'), otp)
 
@@ -699,7 +766,7 @@ def resend_registration_otp(payload: ResendOtpIn, background_tasks: BackgroundTa
     }
 
 @app.post('/api/auth/register/verify-otp')
-def verify_registration_otp(payload: RegisterOtpVerifyIn):
+def verify_registration_otp(payload: RegisterOtpVerifyIn, background_tasks: BackgroundTasks):
     conn = local_db.get_connection()
     cur = conn.cursor()
 
@@ -721,6 +788,7 @@ def verify_registration_otp(payload: RegisterOtpVerifyIn):
                 cur.execute("DELETE FROM registration_otps WHERE LOWER(email) = LOWER(?)", (payload.email.strip(),))
                 conn.commit()
                 conn.close()
+                background_tasks.add_task(sync_delete_otp, payload.email)
                 raise HTTPException(400, 'OTP code has expired. Please click Resend OTP to get a new code.')
         except Exception:
             pass
@@ -729,6 +797,7 @@ def verify_registration_otp(payload: RegisterOtpVerifyIn):
         cur.execute("DELETE FROM registration_otps WHERE LOWER(email) = LOWER(?)", (payload.email.strip(),))
         conn.commit()
         conn.close()
+        background_tasks.add_task(sync_delete_otp, payload.email)
         raise HTTPException(429, 'Too many invalid attempts. Please request a new OTP.')
 
     valid = (
@@ -766,6 +835,19 @@ def verify_registration_otp(payload: RegisterOtpVerifyIn):
     cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
     user = dict(cur.fetchone())
     conn.close()
+
+    # Sync user, remove OTP, and sync welcome alert to Supabase
+    background_tasks.add_task(sync_user, user)
+    background_tasks.add_task(sync_delete_otp, payload.email)
+    background_tasks.add_task(sync_alert, {
+        'user_id': user_id,
+        'audience': user.get('role', 'farmer'),
+        'type': 'system',
+        'title': '🌾 Welcome to AgroTech!',
+        'message': 'Your account is active. Explore our services and tools.',
+        'is_read': False,
+        'created_by': None
+    })
 
     token = make_token(user)
     return {
@@ -817,7 +899,7 @@ def admin_login(payload: LoginIn):
     return res
 
 @app.post('/api/admin/register')
-def admin_register(payload: RegisterIn):
+def admin_register(payload: RegisterIn, background_tasks: BackgroundTasks):
     conn = local_db.get_connection()
     cur = conn.cursor()
     cur.execute("SELECT id FROM users WHERE LOWER(email) = LOWER(?)", (payload.email.strip(),))
@@ -836,6 +918,8 @@ def admin_register(payload: RegisterIn):
     cur.execute("SELECT * FROM users WHERE id = ?", (admin_id,))
     user = dict(cur.fetchone())
     conn.close()
+
+    background_tasks.add_task(sync_user, user)
 
     return {'message': 'Admin account created successfully', 'user': user_public_fields(user)}
 
@@ -920,7 +1004,7 @@ def get_service_by_id(service_id: int):
     return d
 
 @app.post('/api/services')
-def create_service(payload: ServiceIn, user=Depends(provider_user)):
+def create_service(payload: ServiceIn, background_tasks: BackgroundTasks, user=Depends(provider_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -937,10 +1021,11 @@ def create_service(payload: ServiceIn, user=Depends(provider_user)):
     row = dict(cur.fetchone())
     conn.close()
     row['available'] = bool(row['available'])
+    background_tasks.add_task(sync_service, row, 'upsert')
     return row
 
 @app.put('/api/services/{service_id}')
-def update_service(service_id: int, payload: ServiceIn, user=Depends(provider_user)):
+def update_service(service_id: int, payload: ServiceIn, background_tasks: BackgroundTasks, user=Depends(provider_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM services WHERE id = ?", (service_id,))
@@ -969,10 +1054,11 @@ def update_service(service_id: int, payload: ServiceIn, user=Depends(provider_us
     row = dict(cur.fetchone())
     conn.close()
     row['available'] = bool(row['available'])
+    background_tasks.add_task(sync_service, row, 'upsert')
     return row
 
 @app.put('/api/services/{service_id}/status')
-def toggle_service_status(service_id: int, payload: StatusIn, user=Depends(provider_user)):
+def toggle_service_status(service_id: int, payload: StatusIn, background_tasks: BackgroundTasks, user=Depends(provider_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM services WHERE id = ?", (service_id,))
@@ -993,10 +1079,11 @@ def toggle_service_status(service_id: int, payload: StatusIn, user=Depends(provi
     row = dict(cur.fetchone())
     conn.close()
     row['available'] = bool(row['available'])
+    background_tasks.add_task(sync_service, row, 'upsert')
     return row
 
 @app.delete('/api/services/{service_id}')
-def delete_service(service_id: int, user=Depends(provider_user)):
+def delete_service(service_id: int, background_tasks: BackgroundTasks, user=Depends(provider_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM services WHERE id = ?", (service_id,))
@@ -1013,12 +1100,13 @@ def delete_service(service_id: int, user=Depends(provider_user)):
     cur.execute("DELETE FROM services WHERE id = ?", (service_id,))
     conn.commit()
     conn.close()
+    background_tasks.add_task(sync_service, {'id': service_id}, 'delete')
     return {'message': 'Service deleted successfully'}
 
 # ==================== Service Requests / Bookings ====================
 
 @app.post('/api/requests')
-def create_service_request(payload: ServiceRequestIn, user=Depends(farmer_user)):
+def create_service_request(payload: ServiceRequestIn, background_tasks: BackgroundTasks, user=Depends(farmer_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
     
@@ -1056,6 +1144,19 @@ def create_service_request(payload: ServiceRequestIn, user=Depends(farmer_user))
     cur.execute("SELECT * FROM service_requests WHERE id = ?", (new_id,))
     row = dict(cur.fetchone())
     conn.close()
+
+    background_tasks.add_task(sync_service_request, row, 'upsert')
+    if provider_id:
+        background_tasks.add_task(sync_alert, {
+            'user_id': provider_id,
+            'audience': 'provider',
+            'type': 'request',
+            'title': 'New Service Request 🚜',
+            'message': f"Farmer {user['name']} requested '{payload.service_name}'. Review in your Requests tab.",
+            'is_read': False,
+            'created_by': user['id']
+        })
+
     return row
 
 @app.get('/api/requests/my')
@@ -1106,7 +1207,7 @@ def get_provider_requests(user=Depends(provider_user)):
     return {'requests': rows}
 
 @app.put('/api/requests/{request_id}/status')
-def update_request_status(request_id: str, payload: RequestStatusUpdateIn, user=Depends(current_user)):
+def update_request_status(request_id: str, payload: RequestStatusUpdateIn, background_tasks: BackgroundTasks, user=Depends(current_user)):
     valid_statuses = {'pending', 'accepted', 'rejected', 'completed', 'cancelled'}
     new_status = payload.status.lower().strip()
     if new_status not in valid_statuses:
@@ -1157,7 +1258,45 @@ def update_request_status(request_id: str, payload: RequestStatusUpdateIn, user=
     conn.commit()
     cur.execute("SELECT * FROM service_requests WHERE id = ?", (req['id'],))
     updated = dict(cur.fetchone())
+
+    # Fetch updated service if availability changed
+    updated_svc = None
+    if req.get('service_id') and new_status in {'accepted', 'completed'}:
+        cur.execute("SELECT * FROM services WHERE id = ?", (req['service_id'],))
+        s_row = cur.fetchone()
+        if s_row:
+            updated_svc = dict(s_row)
+            updated_svc['available'] = bool(updated_svc['available'])
+
     conn.close()
+
+    # Sync request status change to Supabase
+    background_tasks.add_task(sync_service_request, {'request_id': updated.get('request_id'), 'status': new_status}, 'update_status')
+    if updated_svc:
+        background_tasks.add_task(sync_service, updated_svc, 'upsert')
+
+    if req.get('farmer_id'):
+        background_tasks.add_task(sync_alert, {
+            'user_id': req['farmer_id'],
+            'audience': 'farmer',
+            'type': 'status',
+            'title': status_titles.get(new_status, 'Request Status Update'),
+            'message': f"Your request for '{req['service_name']}' is now {new_status.upper()}.",
+            'is_read': False,
+            'created_by': None
+        })
+
+    if new_status == 'completed' and req.get('provider_id'):
+        background_tasks.add_task(sync_alert, {
+            'user_id': req['provider_id'],
+            'audience': 'provider',
+            'type': 'status',
+            'title': 'Product Active & Work Completed 🏁',
+            'message': f"Farmer confirmed Work Done for '{req['service_name']}'. The equipment/service is now ACTIVE and open for bookings!",
+            'is_read': False,
+            'created_by': None
+        })
+
     return updated
 
 # ==================== Alerts & Notifications ====================
@@ -1202,6 +1341,10 @@ def mark_all_alerts_read(user=Depends(current_user)):
 @app.get('/api/admin/dashboard')
 def admin_dashboard(user=Depends(admin_user)):
     conn = local_db.get_connection()
+    try:
+        sync_all_from_supabase(conn)
+    except Exception:
+        pass
     cur = conn.cursor()
     
     cur.execute("SELECT COUNT(*) FROM users WHERE role = 'farmer'")
@@ -1212,6 +1355,10 @@ def admin_dashboard(user=Depends(admin_user)):
     active_farmers = cur.fetchone()[0]
     cur.execute("SELECT COUNT(*) FROM users WHERE role IN ('provider','seller') AND status = 'active'")
     active_providers = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM users")
+    total_users_cnt = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM registration_otps")
+    pending_users_cnt = cur.fetchone()[0]
 
     cur.execute("SELECT COUNT(*) FROM services")
     services_cnt = cur.fetchone()[0]
@@ -1236,6 +1383,8 @@ def admin_dashboard(user=Depends(admin_user)):
         'active_farmers': active_farmers,
         'total_providers': providers_cnt,
         'active_providers': active_providers,
+        'total_users': total_users_cnt,
+        'pending_users': pending_users_cnt,
         'total_services': services_cnt,
         'active_services': active_services,
         'total_requests': len(reqs),
@@ -1245,7 +1394,7 @@ def admin_dashboard(user=Depends(admin_user)):
         'total_complaints': complaints_cnt,
         'open_complaints': open_complaints,
         # Legacy fields for backward compatibility
-        'users': farmers_cnt + providers_cnt + 1,
+        'users': total_users_cnt,
         'products': services_cnt,
         'services': services_cnt,
         'orders': len(reqs),
@@ -1256,6 +1405,10 @@ def admin_dashboard(user=Depends(admin_user)):
 @app.get('/api/admin/farmers')
 def admin_get_farmers(status: Optional[str] = None, q: Optional[str] = None, user=Depends(admin_user)):
     conn = local_db.get_connection()
+    try:
+        sync_all_from_supabase(conn)
+    except Exception:
+        pass
     cur = conn.cursor()
     query = """
         SELECT u.id, u.name, u.email, u.phone, u.location, u.role, u.status, u.created_at,
@@ -1281,6 +1434,10 @@ def admin_get_farmers(status: Optional[str] = None, q: Optional[str] = None, use
 @app.get('/api/admin/providers')
 def admin_get_providers(status: Optional[str] = None, q: Optional[str] = None, user=Depends(admin_user)):
     conn = local_db.get_connection()
+    try:
+        sync_all_from_supabase(conn)
+    except Exception:
+        pass
     cur = conn.cursor()
     query = """
         SELECT u.id, u.name, u.email, u.phone, u.location, u.role, u.status, u.created_at,
@@ -1305,16 +1462,107 @@ def admin_get_providers(status: Optional[str] = None, q: Optional[str] = None, u
     return {'providers': rows}
 
 @app.get('/api/admin/users')
-def admin_get_all_users(user=Depends(admin_user)):
+def admin_get_all_users(status: Optional[str] = None, role: Optional[str] = None, q: Optional[str] = None, user=Depends(admin_user)):
+    conn = local_db.get_connection()
+    try:
+        sync_all_from_supabase(conn)
+    except Exception:
+        pass
+    cur = conn.cursor()
+    query = """
+        SELECT u.id, u.name, u.email, u.phone, u.location, u.role, u.status, u.created_at,
+               (SELECT COUNT(*) FROM services WHERE posted_by = u.id) as services_count,
+               (SELECT COUNT(*) FROM service_requests WHERE farmer_id = u.id OR provider_id = u.id) as requests_count
+        FROM users u
+        WHERE 1=1
+    """
+    params = []
+    if status and status.lower() != 'all':
+        query += " AND u.status = ?"
+        params.append(status.strip().lower())
+    if role and role.lower() != 'all':
+        query += " AND u.role = ?"
+        params.append(role.strip().lower())
+    if q and q.strip():
+        query += " AND (LOWER(u.name) LIKE ? OR LOWER(u.email) LIKE ? OR u.phone LIKE ? OR LOWER(u.location) LIKE ?)"
+        pat = f"%{q.strip().lower()}%"
+        params.extend([pat, pat, pat, pat])
+
+    query += " ORDER BY u.created_at DESC"
+    cur.execute(query, tuple(params))
+    users_rows = [dict(r) for r in cur.fetchall()]
+
+    cur.execute("SELECT email, name, phone, location, role, otp_code, expires_at, attempts, created_at FROM registration_otps ORDER BY created_at DESC")
+    pending_rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return {'users': users_rows, 'pending': pending_rows}
+
+@app.get('/api/admin/pending-users')
+def admin_get_pending_users(user=Depends(admin_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT id, name, email, phone, location, role, status, created_at FROM users ORDER BY created_at DESC")
+    cur.execute("SELECT email, name, phone, location, role, otp_code, expires_at, attempts, created_at FROM registration_otps ORDER BY created_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
-    return {'users': rows}
+    return {'pending_users': rows}
+
+@app.post('/api/admin/pending-users/{email}/activate')
+def admin_activate_pending_user(email: str, background_tasks: BackgroundTasks, user=Depends(admin_user)):
+    clean_email = email.strip().lower()
+    conn = local_db.get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM registration_otps WHERE LOWER(email) = ?", (clean_email,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(404, f'Pending registration for {clean_email} not found.')
+    
+    pending = dict(row)
+    user_id = str(uuid.uuid4())
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        cur.execute("""
+            INSERT INTO users (id, name, email, phone, password_hash, location, role, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)
+            ON CONFLICT(email) DO UPDATE SET
+                status = 'active',
+                name = excluded.name,
+                phone = excluded.phone,
+                location = excluded.location,
+                role = excluded.role
+        """, (user_id, pending.get('name', 'User'), clean_email, pending.get('phone', ''), pending.get('password_hash', ''), pending.get('location', ''), pending.get('role', 'farmer'), now_iso))
+        cur.execute("DELETE FROM registration_otps WHERE LOWER(email) = ?", (clean_email,))
+        
+        cur.execute("""
+            INSERT INTO alerts (user_id, audience, type, title, message)
+            VALUES (?, ?, 'system', '🌾 Account Activated by Administrator!', 'Your account has been verified and activated by the administrator. Welcome to AgroTech!')
+        """, (user_id, pending.get('role', 'farmer')))
+        conn.commit()
+    except Exception as ex:
+        conn.close()
+        raise HTTPException(500, f"Error activating user: {ex}")
+    
+    cur.execute("SELECT id, name, email, phone, location, role, status, created_at FROM users WHERE LOWER(email) = ?", (clean_email,))
+    new_user = dict(cur.fetchone())
+    conn.close()
+
+    background_tasks.add_task(sync_user, new_user)
+    background_tasks.add_task(sync_delete_otp, clean_email)
+    return {'message': f"User {clean_email} activated successfully!", 'user': new_user}
+
+@app.delete('/api/admin/pending-users/{email}')
+def admin_delete_pending_user(email: str, background_tasks: BackgroundTasks, user=Depends(admin_user)):
+    clean_email = email.strip().lower()
+    conn = local_db.get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM registration_otps WHERE LOWER(email) = ?", (clean_email,))
+    conn.commit()
+    conn.close()
+    background_tasks.add_task(sync_delete_otp, clean_email)
+    return {'message': f"Pending registration for {clean_email} dismissed."}
 
 @app.put('/api/admin/users/{user_id}/status')
-def admin_update_user_status(user_id: str, payload: StatusIn, user=Depends(admin_user)):
+def admin_update_user_status(user_id: str, payload: StatusIn, background_tasks: BackgroundTasks, user=Depends(admin_user)):
     if payload.status not in {'active', 'blocked', 'pending'}:
         raise HTTPException(400, 'Invalid user status.')
     conn = local_db.get_connection()
@@ -1326,7 +1574,21 @@ def admin_update_user_status(user_id: str, payload: StatusIn, user=Depends(admin
     conn.close()
     if not row:
         raise HTTPException(404, 'User not found.')
-    return dict(row)
+    u_dict = dict(row)
+    background_tasks.add_task(sync_user, u_dict)
+    return u_dict
+
+@app.delete('/api/admin/users/{user_id}')
+def admin_delete_user(user_id: str, background_tasks: BackgroundTasks, user=Depends(admin_user)):
+    if user_id == user.get('id'):
+        raise HTTPException(400, 'Cannot delete your own admin account.')
+    conn = local_db.get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    background_tasks.add_task(sync_delete_user, user_id)
+    return {'message': 'User deleted successfully.'}
 
 @app.get('/api/admin/services')
 def admin_get_services(category: Optional[str] = None, q: Optional[str] = None, user=Depends(admin_user)):
@@ -1359,7 +1621,7 @@ def admin_get_services(category: Optional[str] = None, q: Optional[str] = None, 
     return {'services': rows, 'listings': rows}
 
 @app.put('/api/admin/services/{service_id}/status')
-def admin_update_service_status(service_id: int, payload: StatusIn, user=Depends(admin_user)):
+def admin_update_service_status(service_id: int, payload: StatusIn, background_tasks: BackgroundTasks, user=Depends(admin_user)):
     avail = 1 if payload.status.lower() in {'approved', 'active', 'true', '1'} else 0
     conn = local_db.get_connection()
     cur = conn.cursor()
@@ -1372,15 +1634,17 @@ def admin_update_service_status(service_id: int, payload: StatusIn, user=Depends
         raise HTTPException(404, 'Service not found.')
     d = dict(row)
     d['available'] = bool(d.get('available', 1))
+    background_tasks.add_task(sync_service, d, 'upsert')
     return d
 
 @app.delete('/api/admin/services/{service_id}')
-def admin_delete_service(service_id: int, user=Depends(admin_user)):
+def admin_delete_service(service_id: int, background_tasks: BackgroundTasks, user=Depends(admin_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM services WHERE id = ?", (service_id,))
     conn.commit()
     conn.close()
+    background_tasks.add_task(sync_service, {'id': service_id}, 'delete')
     return {'message': 'Service removed by admin'}
 
 @app.get('/api/admin/requests')
@@ -1425,8 +1689,8 @@ def admin_get_listings_legacy(user=Depends(admin_user)):
     return admin_get_services(user=user)
 
 @app.put('/api/admin/listings/{listing_id}/status')
-def admin_update_listing_status_legacy(listing_id: int, payload: StatusIn, user=Depends(admin_user)):
-    return admin_update_service_status(listing_id, payload, user)
+def admin_update_listing_status_legacy(listing_id: int, payload: StatusIn, background_tasks: BackgroundTasks, user=Depends(admin_user)):
+    return admin_update_service_status(listing_id, payload, background_tasks, user)
 
 @app.get('/api/admin/orders')
 def admin_get_orders_legacy(user=Depends(admin_user)):
@@ -1464,7 +1728,7 @@ def admin_get_complaints(authorization: Optional[str] = Header(None)):
     return {'complaints': rows}
 
 @app.put('/api/admin/complaints/{complaint_id}/status')
-def admin_update_complaint_status(complaint_id: int, payload: StatusIn, user=Depends(admin_user)):
+def admin_update_complaint_status(complaint_id: int, payload: StatusIn, background_tasks: BackgroundTasks, user=Depends(admin_user)):
     if payload.status not in {'open', 'assigned', 'resolved', 'closed'}:
         raise HTTPException(400, 'Invalid complaint status.')
     conn = local_db.get_connection()
@@ -1476,10 +1740,12 @@ def admin_update_complaint_status(complaint_id: int, payload: StatusIn, user=Dep
     conn.close()
     if not row:
         raise HTTPException(404, 'Complaint not found.')
-    return dict(row)
+    c_dict = dict(row)
+    background_tasks.add_task(sync_complaint, {'id': complaint_id, 'status': payload.status}, 'update_status')
+    return c_dict
 
 @app.post('/api/admin/notifications')
-def admin_send_notification(payload: NotificationIn, user=Depends(admin_user)):
+def admin_send_notification(payload: NotificationIn, background_tasks: BackgroundTasks, user=Depends(admin_user)):
     conn = local_db.get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -1491,6 +1757,7 @@ def admin_send_notification(payload: NotificationIn, user=Depends(admin_user)):
     cur.execute("SELECT * FROM alerts WHERE id = ?", (new_id,))
     alert = dict(cur.fetchone())
     conn.close()
+    background_tasks.add_task(sync_alert, alert)
     return alert
 
 # ==================== Legacy Products & Complaints Endpoints ====================
@@ -1502,8 +1769,8 @@ def get_products(category: Optional[str] = None):
     return {'products': res['services']}
 
 @app.post('/api/orders')
-def legacy_create_order(payload: ServiceRequestIn, user=Depends(current_user)):
-    return create_service_request(payload, user)
+def legacy_create_order(payload: ServiceRequestIn, background_tasks: BackgroundTasks, user=Depends(current_user)):
+    return create_service_request(payload, background_tasks, user)
 
 @app.get('/api/orders')
 def legacy_get_orders(user=Depends(current_user)):
@@ -1512,7 +1779,7 @@ def legacy_get_orders(user=Depends(current_user)):
     return get_my_requests(user)
 
 @app.post('/api/complaints')
-def create_complaint(payload: ComplaintIn, authorization: Optional[str] = Header(None)):
+def create_complaint(payload: ComplaintIn, background_tasks: BackgroundTasks, authorization: Optional[str] = Header(None)):
     user_id = 'usr-farmer-01'
     user_name = 'Farmer (Madhur Pratap)'
     if authorization and authorization.lower().startswith('bearer '):
@@ -1550,6 +1817,18 @@ def create_complaint(payload: ComplaintIn, authorization: Optional[str] = Header
     cur.execute("SELECT * FROM complaints WHERE id = ?", (new_id,))
     comp = dict(cur.fetchone())
     conn.close()
+
+    background_tasks.add_task(sync_complaint, comp, 'insert')
+    background_tasks.add_task(sync_alert, {
+        'user_id': None,
+        'audience': 'admin',
+        'type': 'complaint',
+        'title': f"⚠️ Support Ticket #{new_id}: {payload.subject}",
+        'message': f"{user_name} registered a complaint: {payload.description[:90]}",
+        'is_read': False,
+        'created_by': None
+    })
+
     return comp
 
 @app.get('/api/notifications')

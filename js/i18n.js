@@ -55,7 +55,7 @@ const AgroI18n = {
       'nav.provider_profile': 'Provider Profile',
 
       // Navigation - Admin
-      'nav.admin_dashboard': 'Dashboard',
+      'nav.admin_dashboard': 'Dashboard & Analytics',
       'nav.admin_farmers': 'Farmers',
       'nav.admin_providers': 'Providers',
       'nav.admin_services': 'Services',
@@ -263,7 +263,7 @@ const AgroI18n = {
       'prov_help.faq4_a': 'You can submit the support inquiry form below or call the AgroTech helpline at +91 8127059442.',
 
       // Admin Panel
-      'admin.portal_title': 'Admin Control Panel',
+      'admin.portal_title': 'Admin Dashboard & Analytics',
       'admin.portal_subtitle': 'Comprehensive management for Farmers, Providers, Services, Requests & Analytics',
       'admin.stat_total_farmers': 'Total Farmers',
       'admin.stat_active_farmers': 'Active Farmers',
@@ -469,7 +469,7 @@ const AgroI18n = {
       'nav.provider_profile': 'प्रदाता प्रोफाइल',
 
       // Navigation - Admin
-      'nav.admin_dashboard': 'डैशबोर्ड',
+      'nav.admin_dashboard': 'डैशबोर्ड एवं एनालिटिक्स',
       'nav.admin_farmers': 'किसान प्रबंधन',
       'nav.admin_providers': 'प्रदाता प्रबंधन',
       'nav.admin_services': 'सेवाएं प्रबंधन',
@@ -677,7 +677,7 @@ const AgroI18n = {
       'prov_help.faq4_a': 'आप नीचे दिए गए फॉर्म द्वारा सहायता मांग सकते हैं या हेल्पलाइन +91 8127059442 पर कॉल कर सकते हैं।',
 
       // Admin Panel
-      'admin.portal_title': 'प्रशासक नियंत्रण कक्ष (Admin Panel)',
+      'admin.portal_title': 'एडमिन डैशबोर्ड एवं एनालिटिक्स (Admin Panel)',
       'admin.portal_subtitle': 'किसानों, प्रदाताओं, सेवाओं, अनुरोधों और एनालिटिक्स का केंद्रीय प्रबंधन',
       'admin.stat_total_farmers': 'कुल किसान',
       'admin.stat_active_farmers': 'सक्रिय किसान',

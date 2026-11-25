@@ -11,6 +11,81 @@ create extension if not exists pgcrypto;
 grant usage on schema public to postgres, anon, authenticated, service_role;
 
 -- ==============================================================================
+-- 0. Schema Migration & Type Compatibility Check
+-- Automatically converts any existing UUID columns to TEXT so foreign keys match!
+-- ==============================================================================
+do $$
+declare
+    r record;
+begin
+    -- 1. Drop existing foreign key constraints on public.users to allow type conversion
+    for r in (
+        select tc.table_schema, tc.table_name, tc.constraint_name
+        from information_schema.table_constraints tc
+        join information_schema.constraint_column_usage ccu
+          on ccu.constraint_name = tc.constraint_name
+          and ccu.table_schema = tc.table_schema
+        where tc.constraint_type = 'FOREIGN KEY'
+          and ccu.table_name = 'users'
+          and ccu.column_name = 'id'
+          and tc.table_schema = 'public'
+    ) loop
+        execute format('alter table %I.%I drop constraint if exists %I', r.table_schema, r.table_name, r.constraint_name);
+    end loop;
+
+    -- 2. Convert public.users.id from UUID to TEXT if needed
+    if exists (
+        select 1 from information_schema.columns
+        where table_schema = 'public' and table_name = 'users' and column_name = 'id' and data_type = 'uuid'
+    ) then
+        alter table public.users alter column id type text using id::text;
+        alter table public.users alter column id set default gen_random_uuid()::text;
+    end if;
+
+    -- 3. Convert all referencing columns from UUID to TEXT if needed
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'services' and column_name = 'posted_by' and data_type = 'uuid') then
+        alter table public.services alter column posted_by type text using posted_by::text;
+    end if;
+
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'service_requests' and column_name = 'farmer_id' and data_type = 'uuid') then
+        alter table public.service_requests alter column farmer_id type text using farmer_id::text;
+    end if;
+
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'service_requests' and column_name = 'provider_id' and data_type = 'uuid') then
+        alter table public.service_requests alter column provider_id type text using provider_id::text;
+    end if;
+
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'complaints' and column_name = 'user_id' and data_type = 'uuid') then
+        alter table public.complaints alter column user_id type text using user_id::text;
+    end if;
+
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'alerts' and column_name = 'user_id' and data_type = 'uuid') then
+        alter table public.alerts alter column user_id type text using user_id::text;
+    end if;
+
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'alerts' and column_name = 'created_by' and data_type = 'uuid') then
+        alter table public.alerts alter column created_by type text using created_by::text;
+    end if;
+
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'notifications' and column_name = 'created_by' and data_type = 'uuid') then
+        alter table public.notifications alter column created_by type text using created_by::text;
+    end if;
+
+    -- 4. Drop any outdated check constraints on tables so updated values are accepted
+    for r in (
+        select c.conname, t.relname
+        from pg_constraint c
+        join pg_class t on c.conrelid = t.oid
+        join pg_namespace n on t.relnamespace = n.oid
+        where c.contype = 'c'
+          and n.nspname = 'public'
+          and t.relname in ('users', 'services', 'service_requests', 'complaints', 'alerts', 'registration_otps')
+    ) loop
+        execute format('alter table public.%I drop constraint if exists %I', r.relname, r.conname);
+    end loop;
+end $$;
+
+-- ==============================================================================
 -- 1. Users Table (Farmer, Provider, Admin)
 -- ==============================================================================
 create table if not exists public.users (
@@ -21,7 +96,7 @@ create table if not exists public.users (
   password_hash text not null,
   location text default '',
   role text not null default 'farmer' check (role in ('farmer', 'provider', 'seller', 'admin')),
-  status text not null default 'active' check (status in ('active', 'blocked', 'pending')),
+  status text not null default 'active' check (status in ('active', 'blocked', 'pending', 'inactive')),
   created_at timestamptz not null default now()
 );
 
@@ -40,7 +115,7 @@ create table if not exists public.services (
   rating numeric(3, 2) default 4.5,
   reviews integer default 0,
   available boolean default true,
-  status text not null default 'approved' check (status in ('pending', 'approved', 'rejected')),
+  status text not null default 'approved' check (status in ('pending', 'approved', 'rejected', 'active', 'inactive')),
   posted_by text references public.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
@@ -61,7 +136,7 @@ create table if not exists public.service_requests (
   price numeric(12, 2) not null,
   payment_method text not null default 'cod',
   payment_status text not null default 'pending' check (payment_status in ('pending', 'paid', 'success', 'completed', 'failed', 'refunded')),
-  status text not null default 'pending' check (status in ('pending', 'accepted', 'rejected', 'confirmed', 'completed', 'cancelled')),
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'in_progress', 'rejected', 'confirmed', 'completed', 'cancelled')),
   address text default '',
   notes text default '',
   preferred_date text default '',
@@ -88,7 +163,7 @@ create table if not exists public.alerts (
   id bigint generated by default as identity primary key,
   user_id text references public.users(id) on delete cascade,
   audience text not null default 'all' check (audience in ('all', 'farmer', 'provider', 'admin')),
-  type text not null default 'system' check (type in ('request', 'status', 'system', 'promo', 'order', 'complaint')),
+  type text not null default 'system' check (type in ('request', 'status', 'system', 'promo', 'order', 'complaint', 'broadcast', 'alert')),
   title text not null default 'Notification',
   message text not null,
   is_read boolean not null default false,
@@ -114,7 +189,7 @@ create table if not exists public.registration_otps (
   phone text not null,
   password_hash text not null,
   location text default '',
-  role text not null check (role in ('farmer', 'provider', 'seller')),
+  role text not null check (role in ('farmer', 'provider', 'seller', 'admin')),
   otp_code text default '',
   otp_hash text not null,
   expires_at timestamptz not null,
@@ -125,20 +200,81 @@ create table if not exists public.registration_otps (
 -- ==============================================================================
 -- 7. High Performance Indexes
 -- ==============================================================================
+create index if not exists idx_users_email on public.users(email);
 create index if not exists idx_users_role on public.users(role);
 create index if not exists idx_users_status on public.users(status);
 create index if not exists idx_services_posted_by on public.services(posted_by);
 create index if not exists idx_services_category on public.services(category);
 create index if not exists idx_services_available on public.services(available);
+create index if not exists idx_services_status on public.services(status);
 create index if not exists idx_service_requests_farmer on public.service_requests(farmer_id);
 create index if not exists idx_service_requests_provider on public.service_requests(provider_id);
 create index if not exists idx_service_requests_status on public.service_requests(status);
+create index if not exists idx_complaints_user on public.complaints(user_id);
+create index if not exists idx_complaints_status on public.complaints(status);
 create index if not exists idx_alerts_user_id on public.alerts(user_id);
 create index if not exists idx_alerts_audience on public.alerts(audience);
+create index if not exists idx_alerts_is_read on public.alerts(is_read);
 create index if not exists idx_registration_otps_expires_at on public.registration_otps(expires_at);
 
 -- ==============================================================================
--- 8. Row Level Security (RLS) & Policies
+-- 8. Enforce Foreign Key Integrity
+-- ==============================================================================
+do $$
+begin
+    if not exists (select 1 from information_schema.table_constraints where constraint_name = 'services_posted_by_fkey' and table_schema = 'public') then
+        alter table public.services add constraint services_posted_by_fkey foreign key (posted_by) references public.users(id) on delete set null;
+    end if;
+    if not exists (select 1 from information_schema.table_constraints where constraint_name = 'service_requests_farmer_id_fkey' and table_schema = 'public') then
+        alter table public.service_requests add constraint service_requests_farmer_id_fkey foreign key (farmer_id) references public.users(id) on delete set null;
+    end if;
+    if not exists (select 1 from information_schema.table_constraints where constraint_name = 'service_requests_provider_id_fkey' and table_schema = 'public') then
+        alter table public.service_requests add constraint service_requests_provider_id_fkey foreign key (provider_id) references public.users(id) on delete set null;
+    end if;
+    if not exists (select 1 from information_schema.table_constraints where constraint_name = 'complaints_user_id_fkey' and table_schema = 'public') then
+        alter table public.complaints add constraint complaints_user_id_fkey foreign key (user_id) references public.users(id) on delete set null;
+    end if;
+    if not exists (select 1 from information_schema.table_constraints where constraint_name = 'alerts_user_id_fkey' and table_schema = 'public') then
+        alter table public.alerts add constraint alerts_user_id_fkey foreign key (user_id) references public.users(id) on delete cascade;
+    end if;
+    if not exists (select 1 from information_schema.table_constraints where constraint_name = 'alerts_created_by_fkey' and table_schema = 'public') then
+        alter table public.alerts add constraint alerts_created_by_fkey foreign key (created_by) references public.users(id) on delete set null;
+    end if;
+
+    -- Re-apply named check constraints so existing databases receive updates too.
+    alter table public.users drop constraint if exists users_role_check;
+    alter table public.users add constraint users_role_check check (role in ('farmer', 'provider', 'seller', 'admin'));
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'users' and c.conname = 'users_status_check') then
+        alter table public.users add constraint users_status_check check (status in ('active', 'blocked', 'pending', 'inactive'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'services' and c.conname = 'services_status_check') then
+        alter table public.services add constraint services_status_check check (status in ('pending', 'approved', 'rejected', 'active', 'inactive'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'service_requests' and c.conname = 'service_requests_status_check') then
+        alter table public.service_requests add constraint service_requests_status_check check (status in ('pending', 'accepted', 'in_progress', 'rejected', 'confirmed', 'completed', 'cancelled'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'service_requests' and c.conname = 'service_requests_payment_status_check') then
+        alter table public.service_requests add constraint service_requests_payment_status_check check (payment_status in ('pending', 'paid', 'success', 'completed', 'failed', 'refunded'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'complaints' and c.conname = 'complaints_priority_check') then
+        alter table public.complaints add constraint complaints_priority_check check (priority in ('low', 'medium', 'high'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'complaints' and c.conname = 'complaints_status_check') then
+        alter table public.complaints add constraint complaints_status_check check (status in ('open', 'assigned', 'resolved', 'closed'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'alerts' and c.conname = 'alerts_type_check') then
+        alter table public.alerts add constraint alerts_type_check check (type in ('request', 'status', 'system', 'promo', 'order', 'complaint', 'broadcast', 'alert'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'alerts' and c.conname = 'alerts_audience_check') then
+        alter table public.alerts add constraint alerts_audience_check check (audience in ('all', 'farmer', 'provider', 'admin'));
+    end if;
+    if not exists (select 1 from pg_constraint c join pg_class t on c.conrelid = t.oid join pg_namespace n on t.relnamespace = n.oid where n.nspname = 'public' and t.relname = 'registration_otps' and c.conname = 'registration_otps_role_check') then
+        alter table public.registration_otps add constraint registration_otps_role_check check (role in ('farmer', 'provider', 'seller', 'admin'));
+    end if;
+end $$;
+
+-- ==============================================================================
+-- 9. Row Level Security (RLS) & Policies
 -- ==============================================================================
 alter table public.users enable row level security;
 alter table public.services enable row level security;
@@ -175,7 +311,7 @@ grant all privileges on all tables in schema public to postgres, anon, authentic
 grant all privileges on all sequences in schema public to postgres, anon, authenticated, service_role;
 
 -- ==============================================================================
--- 9. Seed Default Accounts (Admin, Farmer, Provider)
+-- 10. Seed Default Accounts (Admin, Farmer, Provider)
 -- Passwords: admin123, farmer123, provider123
 -- ==============================================================================
 insert into public.users (id, name, email, phone, password_hash, location, role, status)
@@ -216,7 +352,7 @@ on conflict (email) do update set
   phone = excluded.phone;
 
 -- ==============================================================================
--- 10. Seed Initial Machinery, Equipment & Agricultural Services
+-- 11. Seed Initial Machinery, Equipment & Agricultural Services
 -- ==============================================================================
 insert into public.services (id, name, category, price, unit, description, image, rating, reviews, available, status, location, posted_by)
 overriding system value
@@ -350,7 +486,7 @@ on conflict (id) do update set
 select setval('public.services_id_seq', coalesce((select max(id) from public.services), 1), true);
 
 -- ==============================================================================
--- 11. Seed Sample Service Requests / Bookings
+-- 12. Seed Sample Service Requests / Bookings
 -- ==============================================================================
 insert into public.service_requests (
   id, request_id, farmer_id, farmer_name, farmer_phone, provider_id,
@@ -400,7 +536,7 @@ on conflict (request_id) do nothing;
 select setval('public.service_requests_id_seq', coalesce((select max(id) from public.service_requests), 1), true);
 
 -- ==============================================================================
--- 12. Seed Sample Alerts & Announcements
+-- 13. Seed Sample Alerts & Announcements
 -- ==============================================================================
 insert into public.alerts (user_id, audience, type, title, message, is_read)
 values

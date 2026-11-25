@@ -14,5 +14,6 @@
     "**/*.pyc",
     "**/*.log"
   ],
-  "liveServer.settings.wait": 300
+  "liveServer.settings.wait": 300,
+  "liveServer.settings.port": 5501
 }
